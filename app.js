@@ -84,8 +84,8 @@ const DEFAULT_SETTINGS = {
   },
   traderPrices: [],
   promotions: [
-    { id: newId(), title: "3 ספרים ב-100", details: "תקף לספרים משתתפים במבצע.", imageUrl: "", isActive: true, sortOrder: 1 },
-    { id: newId(), title: "ספרי ילדים מ-35 ₪", details: "חפשו לפי שם הספר או סרקו ברקוד למחיר מדויק.", imageUrl: "", isActive: true, sortOrder: 2 }
+    { id: newId(), title: "3 ספרים ב-100", details: "תקף לספרים משתתפים במבצע.", imageUrl: "", isActive: true, showInSlideshow: true, showInBanner: true, sortOrder: 1 },
+    { id: newId(), title: "ספרי ילדים מ-35 ₪", details: "חפשו לפי שם הספר או סרקו ברקוד למחיר מדויק.", imageUrl: "", isActive: true, showInSlideshow: true, showInBanner: true, sortOrder: 2 }
   ],
   payment: {
     bitQrUrl: "",
@@ -122,6 +122,7 @@ const storageKeys = {
 };
 
 const CART_IDLE_CLEAR_MS = 5 * 60 * 1000;
+const ADMIN_AUTO_LOCK_MS = 3 * 60 * 1000;
 
 let state = {
   books: [],
@@ -131,6 +132,7 @@ let state = {
   invoices: [],
   settings: cloneDefaultSettings(),
   scanner: null,
+  adminBarcodeScanner: null,
   lastResult: null,
   customerScreen: "home",
   previousCustomerScreen: "home",
@@ -151,6 +153,7 @@ let state = {
   hiddenAdminLongPressOpened: false,
   idleTimer: null,
   cartIdleTimer: null,
+  adminAutoLockTimer: null,
   slideTimer: null,
   currentSlideIndex: 0,
   currentSlides: []
@@ -167,6 +170,8 @@ const elements = {
   adminPanels: document.querySelectorAll("[data-admin-panel]"),
   customerHome: $("#customer-home"),
   customerBusinessName: $("#customer-business-name"),
+  promoTicker: $("#promo-ticker"),
+  promoTickerTrack: $("#promo-ticker-track"),
   customerScreens: document.querySelectorAll(".customer-screen"),
   customerActions: document.querySelectorAll("[data-customer-screen]"),
   customerBackButtons: document.querySelectorAll("[data-customer-back]"),
@@ -234,6 +239,7 @@ const elements = {
   searchBooks: $("#search-books"),
   adminBookSuggestions: $("#admin-book-suggestions"),
   bookSort: $("#book-sort"),
+  clearBooksSearch: $("#clear-books-search"),
   bookImportForm: $("#book-import-form"),
   bookImportFile: $("#book-import-file"),
   bookImportStock: $("#book-import-stock"),
@@ -272,9 +278,16 @@ const elements = {
   invoiceStatusFilter: $("#invoice-status-filter"),
   invoiceSummary: $("#invoice-summary"),
   invoiceList: $("#invoice-list"),
+  geminiInvoiceForm: $("#gemini-invoice-form"),
+  geminiApiKey: $("#gemini-api-key"),
+  geminiInvoiceFile: $("#gemini-invoice-file"),
+  geminiStatus: $("#gemini-status"),
+  geminiOutput: $("#gemini-output"),
   returnToCustomerButton: $("#return-to-customer-button"),
   lockAdminButton: $("#lock-admin-button"),
   exportButton: $("#export-button"),
+  importDataButton: $("#import-data-button"),
+  importDataFile: $("#import-data-file"),
   bookDialog: $("#book-dialog"),
   bookDialogForm: $("#book-dialog-form"),
   bookDialogTitle: $("#book-dialog-title"),
@@ -282,6 +295,10 @@ const elements = {
   bookTitle: $("#book-title"),
   bookAuthor: $("#book-author"),
   bookBarcode: $("#book-barcode"),
+  scanBookBarcodeButton: $("#scan-book-barcode-button"),
+  adminBarcodeScannerShell: $("#admin-barcode-scanner-shell"),
+  adminBarcodeReader: $("#admin-barcode-reader"),
+  stopAdminBarcodeScanButton: $("#stop-admin-barcode-scan-button"),
   bookCategory: $("#book-category"),
   bookPrice: $("#book-price"),
   bookOriginalPrice: $("#book-original-price"),
@@ -309,6 +326,7 @@ const elements = {
   promoSortOrder: $("#promo-sort-order"),
   promoActive: $("#promo-active"),
   promoShowInSlideshow: $("#promo-show-in-slideshow"),
+  promoShowInBanner: $("#promo-show-in-banner"),
   addSlideButton: $("#add-slide-button"),
   adminSlidesList: $("#admin-slides-list"),
   slideshowPreviewList: $("#slideshow-preview-list"),
@@ -348,6 +366,8 @@ const elements = {
   purchaseConfirmDialog: $("#purchase-confirm-dialog"),
   purchaseConfirmText: $("#purchase-confirm-text"),
   confirmPurchaseButton: $("#confirm-purchase-button"),
+  clearCartDialog: $("#clear-cart-dialog"),
+  confirmClearCartButton: $("#confirm-clear-cart-button"),
   undoButton: $("#undo-button"),
   undoDialog: $("#undo-dialog"),
   undoConfirmText: $("#undo-confirm-text"),
@@ -392,11 +412,73 @@ function runSafely(action, userMessage) {
 }
 
 function normalizeBarcode(value) {
-  return String(value || "").replace(/\D/g, "");
+  const cleaned = String(value || "").trim().toUpperCase().replace(/[^0-9X]/g, "");
+  if (cleaned.length === 10 && cleaned.endsWith("X")) return cleaned;
+  return cleaned.replace(/X/g, "");
+}
+
+function isbn10CheckDigit(firstNineDigits) {
+  if (!/^\d{9}$/.test(firstNineDigits)) return "";
+  const sum = firstNineDigits
+    .split("")
+    .reduce((total, digit, index) => total + Number(digit) * (10 - index), 0);
+  const remainder = 11 - (sum % 11);
+  if (remainder === 10) return "X";
+  if (remainder === 11) return "0";
+  return String(remainder);
+}
+
+function isbn13CheckDigit(firstTwelveDigits) {
+  if (!/^\d{12}$/.test(firstTwelveDigits)) return "";
+  const sum = firstTwelveDigits
+    .split("")
+    .reduce((total, digit, index) => total + Number(digit) * (index % 2 === 0 ? 1 : 3), 0);
+  return String((10 - (sum % 10)) % 10);
+}
+
+function barcodeCandidates(value) {
+  const normalized = normalizeBarcode(value);
+  if (!normalized) return [];
+
+  const candidates = new Set([normalized]);
+  if (/^\d{13}$/.test(normalized) && normalized.startsWith("0")) {
+    candidates.add(normalized.slice(1));
+  }
+  if (normalized.length > 10 && /^0+\d+$/.test(normalized)) {
+    const withoutLeadingZeros = normalized.replace(/^0+/, "");
+    if (withoutLeadingZeros) candidates.add(withoutLeadingZeros);
+  }
+  if (/^\d{12}$/.test(normalized)) {
+    candidates.add(`0${normalized}`);
+  }
+  if (/^\d{13}$/.test(normalized) && normalized.startsWith("978")) {
+    const isbn10Base = normalized.slice(3, 12);
+    const isbn10Check = isbn10CheckDigit(isbn10Base);
+    if (isbn10Check) candidates.add(`${isbn10Base}${isbn10Check}`);
+  }
+  if (/^\d{9}[\dX]$/.test(normalized)) {
+    const isbn13Base = `978${normalized.slice(0, 9)}`;
+    candidates.add(`${isbn13Base}${isbn13CheckDigit(isbn13Base)}`);
+  }
+  return [...candidates];
 }
 
 function money(value) {
   return `${Number(value || 0).toLocaleString("he-IL")} ₪`;
+}
+
+function cartIcon() {
+  return `
+    <svg class="cart-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M7 7h14l-1.6 7.2a2 2 0 0 1-2 1.6H9.2a2 2 0 0 1-2-1.7L5.8 4H3" />
+      <circle cx="9.5" cy="20" r="1.4" />
+      <circle cx="17.5" cy="20" r="1.4" />
+    </svg>
+  `;
+}
+
+function withCartIcon(label) {
+  return `${cartIcon()}<span>${escapeHtml(label)}</span>`;
 }
 
 function normalizeBook(book) {
@@ -430,6 +512,7 @@ function normalizePromotion(promo, index = 0) {
     imageUrl: promo.imageUrl || promo.image_url || "",
     isActive: promo.isActive ?? promo.is_active ?? true,
     showInSlideshow: promo.showInSlideshow ?? promo.show_in_slideshow ?? true,
+    showInBanner: promo.showInBanner ?? promo.show_in_banner ?? true,
     sortOrder: Number(promo.sortOrder ?? promo.sort_order ?? index + 1)
   };
 }
@@ -947,21 +1030,28 @@ async function markPurchased(book) {
 }
 
 function findBookByBarcode(barcode) {
-  const normalized = normalizeBarcode(barcode);
-  if (!normalized) return undefined;
-  return state.books.find((book) => book.barcode && normalizeBarcode(book.barcode) === normalized);
+  const candidates = new Set(barcodeCandidates(barcode));
+  if (!candidates.size) return undefined;
+  return state.books.find((book) => {
+    if (!book.barcode) return false;
+    return barcodeCandidates(book.barcode).some((candidate) => candidates.has(candidate));
+  });
 }
 
 function searchBooks(query, limit = 12, options = {}) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [];
   const includeBarcode = Boolean(options.includeBarcode);
+  const barcodeQueryCandidates = includeBarcode ? barcodeCandidates(query) : [];
   return state.books
     .filter((book) => {
       return book.title.toLowerCase().includes(normalized)
         || book.author.toLowerCase().includes(normalized)
         || book.category.toLowerCase().includes(normalized)
-        || (includeBarcode && book.barcode.includes(normalized));
+        || (includeBarcode && (
+          book.barcode.includes(normalized)
+          || barcodeCandidates(book.barcode).some((candidate) => barcodeQueryCandidates.includes(candidate))
+        ));
     })
     .slice(0, limit);
 }
@@ -1036,12 +1126,21 @@ function clearCart({ silent = false } = {}) {
   if (!silent) showToast("הסל נוקה");
 }
 
+function isCustomerExperienceActive() {
+  return !elements.adminView?.classList.contains("active");
+}
+
+function openClearCartDialog() {
+  if (!state.cart.length) return;
+  elements.clearCartDialog?.showModal();
+}
+
 function renderCartButton() {
   const totals = getCartTotals();
   const label = `סל קנייה (${totals.itemCount})`;
   [elements.openCartButton, elements.floatingCartButton].forEach((button) => {
     if (!button) return;
-    button.textContent = label;
+    button.innerHTML = withCartIcon(label);
   });
   elements.openCartButton?.classList.add("hidden");
   elements.floatingCartButton?.classList.toggle("hidden", totals.itemCount === 0);
@@ -1049,21 +1148,20 @@ function renderCartButton() {
 
 function clearCartAfterInactivity() {
   if (!state.cart.length) return;
-  [elements.paymentDialog, elements.purchaseConfirmDialog].forEach((dialog) => {
+  [elements.paymentDialog, elements.purchaseConfirmDialog, elements.clearCartDialog].forEach((dialog) => {
     if (dialog?.open) dialog.close();
   });
   clearCart({ silent: true });
-  if (elements.kioskView?.classList.contains("active")) {
-    showCustomerHome();
-    showToast("הסל התאפס אחרי כמה דקות ללא שימוש");
-  }
+  if (!elements.adminView?.classList.contains("active")) switchView("kiosk");
+  showCustomerHome();
+  showToast("הסל התאפס אחרי 5 דקות ללא שימוש");
 }
 
 function resetCartIdleTimer() {
   window.clearTimeout(state.cartIdleTimer);
   state.cartIdleTimer = null;
   if (!state.cart.length) return;
-  if (!elements.kioskView?.classList.contains("active")) return;
+  if (!isCustomerExperienceActive()) return;
   state.cartIdleTimer = window.setTimeout(clearCartAfterInactivity, CART_IDLE_CLEAR_MS);
 }
 
@@ -1133,8 +1231,8 @@ function renderCart() {
     </div>
     <div class="cart-actions">
       <button class="secondary-button" type="button" data-cart-continue>להמשיך לבחור</button>
-      <button class="secondary-button" type="button" data-cart-clear>ניקוי סל</button>
-      <button class="purchase-button" type="button" data-cart-checkout>לתשלום וסימון רכישה</button>
+      <button class="secondary-button cart-clear-action" type="button" data-cart-clear>ניקוי סל</button>
+      <button class="purchase-button" type="button" data-cart-checkout>${withCartIcon("לתשלום וסימון רכישה")}</button>
     </div>
   `;
 }
@@ -1197,6 +1295,13 @@ function renderCategoryControls() {
       </span>
     `)
     .join("");
+}
+
+function clearAdminBookSearch() {
+  if (!elements.searchBooks) return;
+  elements.searchBooks.value = "";
+  elements.adminBookSuggestions?.classList.add("hidden");
+  if (elements.adminBookSuggestions) elements.adminBookSuggestions.innerHTML = "";
 }
 
 function setBookImportStatus(message, status = "idle") {
@@ -1399,7 +1504,10 @@ function renderSlideshowAdmin() {
   elements.slideshowPreviewList.innerHTML = autoSlides.length
     ? autoSlides.map((slide) => `
         <article class="slide-source-card">
-          <span>${slide.kind === "promo" ? "מבצע" : "ספר"}</span>
+          <div class="slide-source-card-top">
+            <span>${slide.kind === "promo" ? "מבצע" : "ספר"}</span>
+            <button class="danger-button slide-remove-button" type="button" data-disable-slideshow-kind="${slide.kind}" data-disable-slideshow-id="${escapeAttr(slide.sourceId)}">הסר מהתצוגה</button>
+          </div>
           <strong>${escapeHtml(slide.title)}</strong>
           <small>${escapeHtml(slide.text)}</small>
         </article>
@@ -1434,9 +1542,11 @@ function switchView(view) {
   elements.kioskView.classList.toggle("active", view === "kiosk");
   elements.aboutView.classList.toggle("active", view === "about");
   elements.adminView.classList.toggle("active", view === "admin");
+  if (view === "admin") switchAdminPanel("books", { resetBookSearch: true });
   if (view !== "kiosk") stopIdleSlideshow();
   resetIdleTimer();
   resetCartIdleTimer();
+  scheduleAdminAutoLock();
   hideSuggestions();
 }
 
@@ -1459,14 +1569,46 @@ function unlockAdmin(pin) {
   state.adminUnlocked = true;
   sessionStorage.setItem("bookStand.adminUnlocked", "true");
   elements.adminAccessDialog.close();
+  scheduleAdminAutoLock();
   switchView("admin");
 }
 
-function lockAdmin() {
+function scheduleAdminAutoLock() {
+  window.clearTimeout(state.adminAutoLockTimer);
+  state.adminAutoLockTimer = null;
+  if (!state.adminUnlocked) return;
+  state.adminAutoLockTimer = window.setTimeout(() => lockAdmin({ auto: true }), ADMIN_AUTO_LOCK_MS);
+}
+
+function resetAdminAutoLockFromAdminActivity() {
+  if (!state.adminUnlocked) return;
+  if (!elements.adminView?.classList.contains("active")) return;
+  scheduleAdminAutoLock();
+}
+
+function closeAdminDialogs() {
+  [
+    elements.bookDialog,
+    elements.deleteBookDialog,
+    elements.promoDialog,
+    elements.slideDialog,
+    elements.undoDialog,
+    elements.adminAccessDialog
+  ].forEach((dialog) => {
+    if (dialog?.open) dialog.close();
+  });
+}
+
+function lockAdmin(options = {}) {
+  const auto = Boolean(options?.auto);
+  const adminWasOpen = elements.adminView?.classList.contains("active");
   state.adminUnlocked = false;
   globalThis.sessionStorage?.removeItem("bookStand.adminUnlocked");
-  switchView("kiosk");
-  showToast("הניהול ננעל");
+  window.clearTimeout(state.adminAutoLockTimer);
+  state.adminAutoLockTimer = null;
+  closeAdminDialogs();
+  if (!auto || adminWasOpen) switchView("kiosk");
+  if (!auto || adminWasOpen) showToast(auto ? "הניהול ננעל אוטומטית" : "הניהול ננעל");
 }
 
 function openHiddenAdminAccess() {
@@ -1509,10 +1651,34 @@ function cancelHiddenAdminLongPress() {
   state.hiddenAdminLongPressTimer = null;
 }
 
-function switchAdminPanel(panel) {
-  state.adminPanel = panel;
-  elements.adminPanelTabs.forEach((button) => button.classList.toggle("active", button.dataset.adminPanelTab === panel));
-  elements.adminPanels.forEach((section) => section.classList.toggle("hidden", section.dataset.adminPanel !== panel));
+function switchAdminPanel(panel, options = {}) {
+  const panelExists = [...elements.adminPanels].some((section) => section.dataset.adminPanel === panel);
+  const activePanel = panelExists ? panel : "books";
+  state.adminPanel = activePanel;
+  elements.adminPanelTabs.forEach((button) => button.classList.toggle("active", button.dataset.adminPanelTab === activePanel));
+  elements.adminPanels.forEach((section) => section.classList.toggle("hidden", section.dataset.adminPanel !== activePanel));
+  if (activePanel === "books" && options.resetBookSearch) clearAdminBookSearch();
+  renderActiveAdminPanel(activePanel);
+  keepActiveAdminPanelInView(activePanel);
+}
+
+function renderActiveAdminPanel(panel) {
+  if (panel === "books") renderBooksTable();
+  if (panel === "orders") renderOrders();
+  if (panel === "promotions") renderAdminForms();
+  if (panel === "sales") renderSalesInsights();
+  if (panel === "invoices") renderInvoices();
+  if (panel === "slideshow") renderSlideshowAdmin();
+  if (panel === "traders") renderTraderPrices();
+  if (panel === "settings") renderAdminForms();
+}
+
+function keepActiveAdminPanelInView(panel) {
+  if (!elements.adminView?.classList.contains("active")) return;
+  const activeSection = [...elements.adminPanels].find((section) => section.dataset.adminPanel === panel);
+  window.requestAnimationFrame(() => {
+    activeSection?.scrollIntoView({ block: "start" });
+  });
 }
 
 function showCustomerScreen(screen) {
@@ -1576,6 +1742,7 @@ function buildIdleSlides() {
     .filter((promo) => promo.showInSlideshow)
     .map((promo) => ({
       id: `promo-${promo.id}`,
+      sourceId: promo.id,
       kind: "promo",
       title: promo.title,
       text: promo.details || "מבצע פעיל בדוכן",
@@ -1590,6 +1757,7 @@ function buildIdleSlides() {
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .map((book, index) => ({
       id: `book-${book.id}`,
+      sourceId: book.id,
       kind: "book",
       title: book.isOnSale ? `במבצע: ${book.title}` : `חדש בדוכן: ${book.title}`,
       text: `${book.author ? `${book.author} · ` : ""}${money(book.price)}${book.originalPrice ? ` במקום ${money(book.originalPrice)}` : ""}`,
@@ -1600,6 +1768,29 @@ function buildIdleSlides() {
     }));
 
   return [...customSlides, ...promoSlides, ...bookSlides].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+async function disableAutoSlideshowItem(kind, sourceId) {
+  if (kind === "promo") {
+    const promo = state.settings.promotions.find((item) => item.id === sourceId);
+    if (!promo) return;
+    const promotions = state.settings.promotions.map((item) => item.id === sourceId
+      ? normalizePromotion({ ...item, showInSlideshow: false })
+      : item
+    );
+    pushUndoSnapshot("הסרת מבצע מהתצוגה הרצה");
+    await persistSettings({ ...state.settings, promotions });
+    showToast("המבצע הוסר מהתצוגה הרצה");
+    return;
+  }
+
+  if (kind === "book") {
+    const book = state.books.find((item) => item.id === sourceId);
+    if (!book) return;
+    pushUndoSnapshot("הסרת ספר מהתצוגה הרצה");
+    await persistBook({ ...book, showInSlideshow: false });
+    showToast("הספר הוסר מהתצוגה הרצה");
+  }
 }
 
 function renderIdleSlide() {
@@ -1671,6 +1862,7 @@ function resetIdleTimer() {
 function render() {
   renderBusiness();
   renderPromos();
+  renderPromotionTicker();
   renderPayment();
   renderAbout();
   renderAdminForms();
@@ -1685,7 +1877,7 @@ function render() {
   renderUndoState();
   elements.syncStatus.textContent = state.usingRemote
     ? "מחובר למסד נתונים חי. עדכונים מסתנכרנים בין הבית לדוכן."
-    : "מצב הדגמה מקומי. כדי לסנכרן מרחוק יש למלא את פרטי Supabase בקובץ config.js.";
+    : "מצב מקומי: הנתונים נשמרים בדפדפן הזה בלבד. כדי להעביר לכרום השתמש בייצוא נתונים ואז ייבוא נתונים, או חבר Supabase לסנכרון קבוע.";
 }
 
 function renderBusiness() {
@@ -1700,6 +1892,27 @@ function activePromotions() {
   return [...state.settings.promotions]
     .filter((promo) => promo.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function bannerPromotions() {
+  return activePromotions().filter((promo) => promo.showInBanner);
+}
+
+function renderPromotionTicker() {
+  if (!elements.promoTicker || !elements.promoTickerTrack) return;
+  const promotions = bannerPromotions();
+  elements.promoTicker.classList.toggle("hidden", !promotions.length);
+  if (!promotions.length) {
+    elements.promoTickerTrack.innerHTML = "";
+    return;
+  }
+  const items = promotions.map((promo) => {
+    const details = promo.details ? ` · ${promo.details}` : "";
+    return `${promo.title}${details}`;
+  });
+  elements.promoTickerTrack.innerHTML = [...items, ...items]
+    .map((item) => `<span class="ticker-item">${escapeHtml(item)}</span>`)
+    .join("");
 }
 
 function renderPromos() {
@@ -1763,7 +1976,12 @@ function renderAdminForms() {
         <div>
           <strong>${escapeHtml(promo.title)}</strong>
           <span>${escapeHtml(promo.details || "ללא תיאור")}</span>
-          <small>${promo.isActive ? "פעיל" : "לא פעיל"} · ${promo.showInSlideshow ? "מופיע בתצוגה הרצה" : "לא בתצוגה הרצה"} · סדר ${promo.sortOrder}</small>
+          <div class="promo-admin-badges">
+            <span class="status-pill ${promo.isActive ? "active" : ""}">${promo.isActive ? "פעיל" : "לא פעיל"}</span>
+            <span class="status-pill ${promo.showInSlideshow ? "slide" : ""}">${promo.showInSlideshow ? "בתצוגה הרצה" : "לא בתצוגה הרצה"}</span>
+            <span class="status-pill ${promo.showInBanner ? "banner" : ""}">${promo.showInBanner ? "בשורת המבצעים" : "לא בשורת המבצעים"}</span>
+            <span class="status-pill">סדר ${promo.sortOrder}</span>
+          </div>
         </div>
         <div class="row-actions">
           <button class="secondary-button" type="button" data-edit-promo="${promo.id}">עריכה</button>
@@ -1777,8 +1995,9 @@ function renderAdminForms() {
 function renderBooksTable() {
   const books = getVisibleBooks();
   const query = elements.searchBooks.value.trim();
+  elements.booksCount.classList.toggle("filter-active", Boolean(query));
   elements.booksCount.textContent = query
-    ? `מוצגים ${books.length} מתוך ${state.books.length} ספרים לפי החיפוש הנוכחי.`
+    ? `חיפוש פעיל: מוצגים ${books.length} מתוך ${state.books.length} ספרים. לחצו "הצג הכל" כדי לראות את כל הרשימה.`
     : `במערכת יש ${state.books.length} ספרים. מוצגים כרגע ${books.length}.`;
   elements.booksTable.innerHTML = books.length
     ? books
@@ -2193,6 +2412,12 @@ function renderThumb(imageUrl) {
     : `<div class="book-thumb placeholder">אין</div>`;
 }
 
+function renderResultImage(imageUrl) {
+  return imageUrl
+    ? `<img class="result-book-image" src="${escapeAttr(imageUrl)}" alt="" />`
+    : "";
+}
+
 function renderResult(book) {
   const originalPrice = book.originalPrice && book.originalPrice > book.price
     ? `<span class="old-price">במקום ${money(book.originalPrice)}</span>`
@@ -2202,8 +2427,8 @@ function renderResult(book) {
   elements.resultPanel.innerHTML = `
     <article class="result-card">
       <div class="result-layout">
-        <div class="result-top">
-          ${renderThumb(book.imageUrl)}
+        <div class="result-top${book.imageUrl ? "" : " no-image"}">
+          ${renderResultImage(book.imageUrl)}
           <div>
             <p class="eyebrow">נמצא בקטלוג</p>
             <div class="result-title">${escapeHtml(book.title)}</div>
@@ -2219,8 +2444,8 @@ function renderResult(book) {
         </div>
       </div>
       <div class="result-actions">
-        <button class="purchase-button" type="button" data-add-cart="${book.id}">הוסף לסל</button>
-        <button class="secondary-button order-result-button" type="button" data-add-cart-and-open="${book.id}">לסל ותשלום</button>
+        <button class="purchase-button" type="button" data-add-cart="${book.id}">${withCartIcon("הוסף לסל")}</button>
+        <button class="secondary-button order-result-button" type="button" data-add-cart-and-open="${book.id}">${withCartIcon("לסל ותשלום")}</button>
         <button class="secondary-button order-result-button" type="button" data-order-from-result="${book.id}">בקשו שנביא</button>
       </div>
     </article>
@@ -2280,6 +2505,7 @@ function openPromoDialog(promo = null) {
   elements.promoSortOrder.value = item.sortOrder;
   elements.promoActive.checked = item.isActive;
   elements.promoShowInSlideshow.checked = item.showInSlideshow;
+  elements.promoShowInBanner.checked = item.showInBanner;
   elements.promoDialog.showModal();
 }
 
@@ -2469,19 +2695,17 @@ async function startScanner() {
     return;
   }
 
+  await stopAdminBarcodeScanner();
   elements.scannerShell.classList.remove("hidden");
   state.scanner = state.scanner || new Html5Qrcode("reader");
-  const formatsToSupport = [
-    Html5QrcodeSupportedFormats.EAN_13,
-    Html5QrcodeSupportedFormats.EAN_8,
-    Html5QrcodeSupportedFormats.UPC_A,
-    Html5QrcodeSupportedFormats.UPC_E
-  ];
+  const formatsToSupport = getBarcodeFormatsToSupport();
+  const scanConfig = { fps: 12, qrbox: { width: 320, height: 170 } };
+  if (formatsToSupport.length) scanConfig.formatsToSupport = formatsToSupport;
 
   try {
     await state.scanner.start(
       { facingMode: "environment" },
-      { fps: 12, qrbox: { width: 320, height: 170 }, formatsToSupport },
+      scanConfig,
       async (decodedText) => {
         await stopScanner();
         await handleBarcode(decodedText);
@@ -2494,10 +2718,71 @@ async function startScanner() {
 }
 
 async function stopScanner() {
-  if (state.scanner?.isScanning) {
-    await state.scanner.stop();
+  try {
+    if (state.scanner?.isScanning) {
+      await state.scanner.stop();
+    }
+  } catch (error) {
+    console.warn("Unable to stop customer barcode scanner", error);
   }
   elements.scannerShell.classList.add("hidden");
+}
+
+function getBarcodeFormatsToSupport() {
+  const formats = globalThis.Html5QrcodeSupportedFormats;
+  if (!formats) return [];
+  return [
+    formats.EAN_13,
+    formats.EAN_8,
+    formats.UPC_A,
+    formats.UPC_E,
+    formats.CODE_128,
+    formats.CODE_39
+  ].filter(Boolean);
+}
+
+async function startAdminBarcodeScanner() {
+  if (!window.Html5Qrcode) {
+    showToast("ספריית הסריקה לא נטענה. אפשר להקליד ברקוד ידנית.");
+    elements.bookBarcode?.focus();
+    return;
+  }
+  if (!elements.adminBarcodeScannerShell || !elements.adminBarcodeReader) return;
+  if (state.adminBarcodeScanner?.isScanning) return;
+
+  await stopScanner();
+  elements.adminBarcodeScannerShell.classList.remove("hidden");
+  state.adminBarcodeScanner = state.adminBarcodeScanner || new Html5Qrcode("admin-barcode-reader");
+  const formatsToSupport = getBarcodeFormatsToSupport();
+  const scanConfig = { fps: 12, qrbox: { width: 300, height: 160 } };
+  if (formatsToSupport.length) scanConfig.formatsToSupport = formatsToSupport;
+
+  try {
+    await state.adminBarcodeScanner.start(
+      { facingMode: "environment" },
+      scanConfig,
+      async (decodedText) => {
+        const normalized = normalizeBarcode(decodedText);
+        elements.bookBarcode.value = normalized || decodedText;
+        await stopAdminBarcodeScanner();
+        showToast("הברקוד נוסף לשדה הספר");
+      }
+    );
+  } catch (error) {
+    elements.adminBarcodeScannerShell.classList.add("hidden");
+    showToast("לא הצלחתי לפתוח מצלמה בניהול. בדקו הרשאת מצלמה או הקלידו ידנית.");
+  }
+}
+
+async function stopAdminBarcodeScanner() {
+  try {
+    if (state.adminBarcodeScanner?.isScanning) {
+      await state.adminBarcodeScanner.stop();
+    }
+  } catch (error) {
+    console.warn("Unable to stop admin barcode scanner", error);
+  }
+  elements.adminBarcodeScannerShell?.classList.add("hidden");
 }
 
 function fileToDataUrl(file) {
@@ -2507,6 +2792,203 @@ function fileToDataUrl(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function fileToText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+async function fileToBase64(file) {
+  const dataUrl = await fileToDataUrl(file);
+  return String(dataUrl).split(",")[1] || "";
+}
+
+function geminiInvoicePrompt() {
+  return `
+פענח את חשבונית הספרים המצורפת והחזר JSON בלבד.
+אל תוסיף הסברים מחוץ ל-JSON.
+אם נתון לא ברור, השאר מחרוזת ריקה או 0 והוסף הערה ב-warnings.
+
+המבנה הנדרש:
+{
+  "supplier": "",
+  "document_type": "",
+  "document_number": "",
+  "date": "YYYY-MM-DD",
+  "total_amount": 0,
+  "items": [
+    {
+      "book_title": "",
+      "quantity": 0,
+      "purchase_unit_price": 0,
+      "line_total": 0,
+      "barcode": "",
+      "notes": ""
+    }
+  ],
+  "warnings": []
+}
+`;
+}
+
+function updateGeminiStatus(status, message) {
+  if (!elements.geminiStatus) return;
+  elements.geminiStatus.dataset.status = status || "idle";
+  elements.geminiStatus.textContent = message || "עדיין לא נשלחה חשבונית.";
+}
+
+function parseGeminiJson(text) {
+  const cleaned = String(text || "")
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (error) {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw error;
+    return JSON.parse(match[0]);
+  }
+}
+
+function extractGeminiText(response) {
+  return response.output_text
+    || response.text
+    || response.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("")
+    || response.output?.map((item) => item.content?.map((part) => part.text || "").join("") || "").join("")
+    || "";
+}
+
+function renderGeminiInvoiceResult(data) {
+  if (!elements.geminiOutput) return;
+  const items = Array.isArray(data.items) ? data.items : [];
+  const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+  elements.geminiOutput.classList.remove("hidden");
+  elements.geminiOutput.innerHTML = `
+    <div class="gemini-result-summary">
+      <span><strong>ספק:</strong> ${escapeHtml(data.supplier || "-")}</span>
+      <span><strong>סוג:</strong> ${escapeHtml(data.document_type || "-")}</span>
+      <span><strong>מספר:</strong> ${escapeHtml(data.document_number || "-")}</span>
+      <span><strong>תאריך:</strong> ${escapeHtml(data.date || "-")}</span>
+      <span><strong>סכום:</strong> ${data.total_amount ? money(data.total_amount) : "-"}</span>
+    </div>
+    <div class="gemini-items-table">
+      ${items.length ? `
+        <table>
+          <thead>
+            <tr>
+              <th>ספר</th>
+              <th>כמות</th>
+              <th>מחיר קניה</th>
+              <th>סכום שורה</th>
+              <th>ברקוד</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((item) => `
+              <tr>
+                <td>${escapeHtml(item.book_title || "-")}${item.notes ? `<small>${escapeHtml(item.notes)}</small>` : ""}</td>
+                <td>${Number(item.quantity || 0)}</td>
+                <td>${item.purchase_unit_price ? money(item.purchase_unit_price) : "-"}</td>
+                <td>${item.line_total ? money(item.line_total) : "-"}</td>
+                <td>${escapeHtml(item.barcode || "-")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      ` : `<p class="small-empty">Gemini לא החזיר שורות ספרים.</p>`}
+    </div>
+    ${warnings.length ? `<div class="gemini-warnings"><strong>הערות:</strong> ${warnings.map(escapeHtml).join(" | ")}</div>` : ""}
+    <details class="gemini-json-details">
+      <summary>JSON מלא</summary>
+      <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+    </details>
+  `;
+}
+
+async function decodeInvoiceWithGemini(apiKey, file) {
+  const base64 = await fileToBase64(file);
+  const body = {
+    contents: [
+      {
+        parts: [
+          {
+            inline_data: {
+              mime_type: "application/pdf",
+              data: base64
+            }
+          },
+          { text: geminiInvoicePrompt() }
+        ]
+      }
+    ],
+    generationConfig: {
+      responseMimeType: "application/json"
+    }
+  };
+
+  const models = ["gemini-2.5-flash", "gemini-1.5-flash"];
+  let lastError = "";
+  for (const model of models) {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok) {
+      const text = extractGeminiText(payload);
+      if (!text) throw new Error("Gemini returned an empty answer");
+      return parseGeminiJson(text);
+    }
+    lastError = payload.error?.message || `Gemini error ${response.status}`;
+    if (!/not found|not supported|model/i.test(lastError)) break;
+  }
+  throw new Error(lastError || "Gemini request failed");
+}
+
+function normalizeFullImportPayload(payload) {
+  if (!payload || typeof payload !== "object") throw new Error("Invalid import payload");
+  const source = payload.data && typeof payload.data === "object" ? payload.data : payload;
+  if (!Array.isArray(source.books)) throw new Error("Import payload must include books");
+  return {
+    books: source.books.map(normalizeBook),
+    sales: Array.isArray(source.sales) ? source.sales.map(normalizeSale) : [],
+    cart: Array.isArray(source.cart) ? source.cart.map(normalizeCartItem) : [],
+    orders: Array.isArray(source.orders) ? source.orders.map(normalizeOrder) : [],
+    invoices: Array.isArray(source.invoices) ? source.invoices.map(normalizeInvoice) : [],
+    settings: normalizeSettings(source.settings || state.settings),
+    backups: Array.isArray(source.backups) ? source.backups : []
+  };
+}
+
+async function importFullDataFile(file) {
+  if (!file) return;
+  if (state.usingRemote) {
+    showToast("ייבוא נתונים מלא מיועד למצב מקומי. בסנכרון מרחוק משתמשים במסד הנתונים.");
+    return;
+  }
+  const text = await fileToText(file);
+  const imported = normalizeFullImportPayload(JSON.parse(text));
+  const approved = window.confirm(`לייבא ${imported.books.length} ספרים ולהחליף את הנתונים בדפדפן הזה?`);
+  if (!approved) return;
+
+  pushUndoSnapshot("ייבוא נתונים מלא");
+  state.books = imported.books;
+  state.sales = imported.sales;
+  state.cart = imported.cart;
+  state.orders = imported.orders;
+  state.invoices = imported.invoices;
+  state.settings = imported.settings;
+  localStorage.setItem(storageKeys.backups, JSON.stringify(imported.backups));
+  saveLocal();
+  render();
+  showToast(`הייבוא הושלם: ${state.books.length} ספרים נטענו`);
 }
 
 function updateInvoiceAutoDetect(status, lines = []) {
@@ -3055,7 +3537,9 @@ function bindEvents() {
   });
 
   elements.adminPanelTabs.forEach((button) => {
-    button.addEventListener("click", () => switchAdminPanel(button.dataset.adminPanelTab));
+    button.addEventListener("click", () => {
+      switchAdminPanel(button.dataset.adminPanelTab, { resetBookSearch: button.dataset.adminPanelTab === "books" });
+    });
   });
 
   elements.customerActions.forEach((button) => {
@@ -3083,9 +3567,17 @@ function bindEvents() {
       resetCartIdleTimer();
     }, { passive: true });
   });
+  ["pointerdown", "keydown", "input", "change"].forEach((eventName) => {
+    elements.adminView.addEventListener(eventName, resetAdminAutoLockFromAdminActivity);
+  });
 
   document.querySelectorAll("[data-close-dialog]").forEach((button) => {
     button.addEventListener("click", () => $(`#${button.dataset.closeDialog}`)?.close());
+  });
+  elements.bookDialog.addEventListener("close", () => stopAdminBarcodeScanner());
+  elements.confirmClearCartButton?.addEventListener("click", () => {
+    clearCart();
+    elements.clearCartDialog?.close();
   });
 
   elements.undoButton.addEventListener("click", openUndoDialog);
@@ -3102,7 +3594,7 @@ function bindEvents() {
     showCustomerHome();
     switchView("kiosk");
   });
-  elements.lockAdminButton.addEventListener("click", lockAdmin);
+  elements.lockAdminButton.addEventListener("click", () => lockAdmin());
 
   elements.adminOrderTitle.addEventListener("input", () => {
     renderSuggestions(elements.adminOrderSuggestions, searchBooks(elements.adminOrderTitle.value, 6), "admin-order-suggest");
@@ -3150,6 +3642,8 @@ function bindEvents() {
 
   elements.scanButton.addEventListener("click", startScanner);
   elements.stopScanButton.addEventListener("click", stopScanner);
+  elements.scanBookBarcodeButton?.addEventListener("click", startAdminBarcodeScanner);
+  elements.stopAdminBarcodeScanButton?.addEventListener("click", stopAdminBarcodeScanner);
 
   elements.manualForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -3317,7 +3811,7 @@ function bindEvents() {
     }
 
     if (event.target.closest("[data-cart-clear]")) {
-      clearCart();
+      openClearCartDialog();
       return;
     }
 
@@ -3441,6 +3935,11 @@ function bindEvents() {
     hideSuggestions();
   });
 
+  elements.clearBooksSearch?.addEventListener("click", () => {
+    clearAdminBookSearch();
+    renderBooksTable();
+  });
+
   elements.bookSort.addEventListener("change", renderBooksTable);
 
   elements.bookImportForm.addEventListener("submit", runSafely(async (event) => {
@@ -3529,7 +4028,8 @@ function bindEvents() {
       imageUrl: elements.promoImageUrl.value.trim(),
       sortOrder: Number(elements.promoSortOrder.value || 0),
       isActive: elements.promoActive.checked,
-      showInSlideshow: elements.promoShowInSlideshow.checked
+      showInSlideshow: elements.promoShowInSlideshow.checked,
+      showInBanner: elements.promoShowInBanner.checked
     });
     const promotions = state.settings.promotions.some((item) => item.id === promo.id)
       ? state.settings.promotions.map((item) => item.id === promo.id ? promo : item)
@@ -3677,6 +4177,12 @@ function bindEvents() {
     showToast("השקופית נשמרה");
   });
 
+  elements.slideshowPreviewList.addEventListener("click", runSafely(async (event) => {
+    const disableButton = event.target.closest("[data-disable-slideshow-kind]");
+    if (!disableButton) return;
+    await disableAutoSlideshowItem(disableButton.dataset.disableSlideshowKind, disableButton.dataset.disableSlideshowId);
+  }, "לא הצלחתי להסיר את הפריט מהתצוגה הרצה."));
+
   elements.adminSlidesList.addEventListener("click", async (event) => {
     const editButton = event.target.closest("[data-edit-slide]");
     if (editButton) {
@@ -3823,6 +4329,34 @@ function bindEvents() {
     await saveInvoiceFromForm();
   }, "לא הצלחתי לשמור את החשבונית. נסו קובץ קטן יותר או נסו שוב."));
 
+  elements.geminiInvoiceForm.addEventListener("submit", runSafely(async (event) => {
+    event.preventDefault();
+    const apiKey = elements.geminiApiKey.value.trim();
+    const file = elements.geminiInvoiceFile.files?.[0];
+    if (!apiKey) {
+      updateGeminiStatus("warning", "צריך להדביק Gemini API Key לניסוי.");
+      return;
+    }
+    if (!file) {
+      updateGeminiStatus("warning", "צריך לבחור חשבונית PDF.");
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
+      updateGeminiStatus("warning", "בשלב הניסוי שולחים רק קובץ PDF.");
+      return;
+    }
+    if (file.size > 18 * 1024 * 1024) {
+      updateGeminiStatus("warning", "הקובץ גדול מדי לניסוי מהיר. נסו PDF קטן יותר.");
+      return;
+    }
+    elements.geminiOutput.classList.add("hidden");
+    elements.geminiOutput.innerHTML = "";
+    updateGeminiStatus("loading", "שולח את ה-PDF ל-Gemini וממתין לפענוח...");
+    const result = await decodeInvoiceWithGemini(apiKey, file);
+    renderGeminiInvoiceResult(result);
+    updateGeminiStatus("success", "הפענוח חזר מ-Gemini. בדקו את הנתונים לפני שימוש.");
+  }, "לא הצלחתי לקבל פענוח מ-Gemini. בדקו שהמפתח תקין ושהקובץ PDF קריא."));
+
   elements.invoiceMonthFilter.addEventListener("input", renderInvoices);
   elements.invoiceSupplierFilter.addEventListener("change", renderInvoices);
   elements.invoiceTypeFilter.addEventListener("change", renderInvoices);
@@ -3870,6 +4404,17 @@ function bindEvents() {
     URL.revokeObjectURL(url);
   });
 
+  elements.importDataButton.addEventListener("click", () => {
+    elements.importDataFile.value = "";
+    elements.importDataFile.click();
+  });
+
+  elements.importDataFile.addEventListener("change", runSafely(async () => {
+    const file = elements.importDataFile.files?.[0];
+    await importFullDataFile(file);
+    elements.importDataFile.value = "";
+  }, "לא הצלחתי לייבא את הנתונים. ודא שזה קובץ ייצוא של האפליקציה."));
+
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".autocomplete-wrap")) hideSuggestions();
   });
@@ -3891,6 +4436,7 @@ async function init() {
   render();
   switchAdminPanel(state.adminPanel);
   resetIdleTimer();
+  scheduleAdminAutoLock();
 }
 
 runSafely(init, "לא הצלחתי להפעיל את האפליקציה. נסו לרענן את הדף.")();
