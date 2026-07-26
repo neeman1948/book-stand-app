@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>מחירון דוכן ספרים</title>
-    <link rel="stylesheet" href="./styles.css?v=20260715-cart-idle" />
+    <link rel="stylesheet" href="./styles.css?v=20260721-gemini-invoice-test" />
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script type="module">
@@ -16,7 +16,7 @@
   </head>
   <body>
     <header class="topbar">
-      <div>
+      <div class="topbar-brand" aria-hidden="true">
         <p class="eyebrow">דוכן ספרים</p>
         <h1 id="app-title">מחירון, חיפוש והזמנות</h1>
       </div>
@@ -47,11 +47,6 @@
                 <strong>חיפוש ספר</strong>
                 <small>לפי שם, מחבר או קטגוריה</small>
               </button>
-              <button class="action-tile" data-customer-screen="promotions" type="button">
-                <span>%</span>
-                <strong>מבצעים</strong>
-                <small>הצעות והנחות פעילות</small>
-              </button>
               <button class="action-tile" data-customer-screen="new-books" type="button">
                 <span>חדש</span>
                 <strong>ספרים חדשים</strong>
@@ -63,6 +58,12 @@
                 <small>לא מצאתם? נשמור בקשה</small>
               </button>
             </div>
+            <button class="promo-ticker hidden" id="promo-ticker" data-customer-screen="promotions" type="button" aria-label="מבצעים פעילים">
+              <span class="ticker-label">מבצעים</span>
+              <span class="ticker-window">
+                <span class="ticker-track" id="promo-ticker-track"></span>
+              </span>
+            </button>
           </div>
           <button class="floating-cart-button hidden" id="floating-cart-button" type="button">סל קנייה (0)</button>
 
@@ -214,6 +215,8 @@
             <button class="secondary-button" id="lock-admin-button" type="button">נעילת ניהול</button>
             <button class="secondary-button" id="undo-button" type="button" disabled>בטל פעולה אחרונה</button>
             <button class="secondary-button" id="export-button" type="button">ייצוא נתונים</button>
+            <button class="secondary-button" id="import-data-button" type="button">ייבוא נתונים</button>
+            <input id="import-data-file" class="hidden" type="file" accept=".json,application/json" />
           </div>
         </section>
 
@@ -270,6 +273,7 @@
                 <option value="new-first">חדשים קודם</option>
                 <option value="old-first">לא חדשים קודם</option>
               </select>
+              <button class="secondary-button" id="clear-books-search" type="button">הצג הכל</button>
               <button class="table-action" id="add-book-button" type="button">ספר חדש</button>
             </div>
           </div>
@@ -473,6 +477,25 @@
             </div>
             <button class="table-action" type="submit">שמירת חשבונית</button>
           </form>
+          <section class="gemini-test-panel" aria-label="ניסוי פענוח חשבונית עם Gemini">
+            <div>
+              <h4>ניסוי פענוח Gemini</h4>
+              <p class="section-note">PDF אחד לבדיקה. התוצאה מוצגת כאן בלבד ולא מעדכנת מלאי.</p>
+            </div>
+            <form class="gemini-test-form" id="gemini-invoice-form">
+              <label>
+                Gemini API Key
+                <input id="gemini-api-key" type="password" autocomplete="off" placeholder="הדבקת מפתח זמני לניסוי" />
+              </label>
+              <label>
+                חשבונית PDF
+                <input id="gemini-invoice-file" type="file" accept=".pdf,application/pdf" />
+              </label>
+              <button class="table-action" type="submit">שלח ל-Gemini</button>
+            </form>
+            <div class="gemini-status" id="gemini-status">עדיין לא נשלחה חשבונית.</div>
+            <div class="gemini-output hidden" id="gemini-output"></div>
+          </section>
           <div class="invoice-filters">
             <label>
               חודש
@@ -685,10 +708,17 @@
             מחבר
             <input id="book-author" autocomplete="off" />
           </label>
-          <label>
+          <label class="wide-field">
             ברקוד *
-            <input id="book-barcode" required inputmode="numeric" autocomplete="off" />
+            <div class="input-row admin-barcode-row">
+              <input id="book-barcode" required inputmode="numeric" autocomplete="off" />
+              <button class="secondary-button compact-button" id="scan-book-barcode-button" type="button">סריקה במצלמה</button>
+            </div>
           </label>
+          <div class="scanner-shell admin-scanner-shell hidden wide-field" id="admin-barcode-scanner-shell">
+            <div id="admin-barcode-reader"></div>
+            <button class="secondary-button" id="stop-admin-barcode-scan-button" type="button">סגירת מצלמה</button>
+          </div>
           <label>
             קטגוריה
             <select id="book-category">
@@ -802,6 +832,10 @@
             <input id="promo-show-in-slideshow" type="checkbox" checked />
             הצג בתצוגה הרצה
           </label>
+          <label class="check-row">
+            <input id="promo-show-in-banner" type="checkbox" checked />
+            הצג בשורת המבצעים בדף הלקוח
+          </label>
         </div>
         <div class="form-actions">
           <button class="secondary-button" type="button" data-close-dialog="promo-dialog">ביטול</button>
@@ -914,6 +948,20 @@
       </div>
     </dialog>
 
+    <dialog class="modal confirm-modal" id="clear-cart-dialog">
+      <div class="modal-card small-modal-card">
+        <div class="modal-heading">
+          <h3>לנקות את סל הקנייה?</h3>
+          <button class="icon-button" type="button" data-close-dialog="clear-cart-dialog" aria-label="סגירה">×</button>
+        </div>
+        <p>כל הספרים שנבחרו יוסרו מהסל.</p>
+        <div class="form-actions">
+          <button class="secondary-button" type="button" data-close-dialog="clear-cart-dialog">לא, להשאיר</button>
+          <button class="danger-button" id="confirm-clear-cart-button" type="button">כן, לנקות סל</button>
+        </div>
+      </div>
+    </dialog>
+
     <section class="idle-slideshow hidden" id="idle-slideshow" aria-live="polite">
       <button class="idle-slideshow-close" id="idle-slideshow-close" type="button">חזרה למסך הראשי</button>
       <div class="idle-slide" id="idle-slide"></div>
@@ -953,6 +1001,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=20260715-cart-idle"></script>
+    <script src="./app.js?v=20260721-gemini-invoice-test"></script>
   </body>
 </html>
