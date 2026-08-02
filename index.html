@@ -1,0 +1,1006 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>מחירון דוכן ספרים</title>
+    <link rel="stylesheet" href="./styles.css?v=20260721-gemini-invoice-test" />
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script type="module">
+      import * as pdfjsLib from "https://unpkg.com/pdfjs-dist@5.4.624/build/pdf.mjs";
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@5.4.624/build/pdf.worker.mjs";
+      window.pdfjsLib = pdfjsLib;
+    </script>
+    <script src="./config.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-brand" aria-hidden="true">
+        <p class="eyebrow">דוכן ספרים</p>
+        <h1 id="app-title">מחירון, חיפוש והזמנות</h1>
+      </div>
+      <nav class="mode-tabs" aria-label="בחירת מצב">
+        <button class="tab-button" data-view="about" type="button">אודות</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="view active" id="kiosk-view" aria-label="מסך לקוח">
+        <section class="customer-shell">
+          <div class="customer-home" id="customer-home">
+            <div class="customer-brand">
+              <h2 id="customer-business-name">נאמן ספרים</h2>
+              <div class="customer-brand-actions">
+                <button class="secondary-button" id="payment-info-button" type="button">מידע כללי ותשלום</button>
+                <button class="secondary-button cart-nav-button hidden" id="open-cart-button" type="button">סל קנייה (0)</button>
+              </div>
+            </div>
+            <div class="customer-actions" aria-label="פעולות לקוח">
+              <button class="action-tile primary" data-customer-screen="scan" type="button">
+                <span>ISBN</span>
+                <strong>סריקת ברקוד</strong>
+                <small>בדיקת מחיר מהירה</small>
+              </button>
+              <button class="action-tile" data-customer-screen="search" type="button">
+                <span>שם</span>
+                <strong>חיפוש ספר</strong>
+                <small>לפי שם, מחבר או קטגוריה</small>
+              </button>
+              <button class="action-tile" data-customer-screen="new-books" type="button">
+                <span>חדש</span>
+                <strong>ספרים חדשים</strong>
+                <small>מה הגיע לאחרונה</small>
+              </button>
+              <button class="action-tile" data-customer-screen="order" type="button">
+                <span>+</span>
+                <strong>בקשה לספר</strong>
+                <small>לא מצאתם? נשמור בקשה</small>
+              </button>
+            </div>
+            <button class="promo-ticker hidden" id="promo-ticker" data-customer-screen="promotions" type="button" aria-label="מבצעים פעילים">
+              <span class="ticker-label">מבצעים</span>
+              <span class="ticker-window">
+                <span class="ticker-track" id="promo-ticker-track"></span>
+              </span>
+            </button>
+          </div>
+          <button class="floating-cart-button hidden" id="floating-cart-button" type="button">סל קנייה (0)</button>
+
+          <section class="customer-screen hidden" id="scan-screen">
+            <div class="screen-header">
+              <button class="secondary-button" data-customer-back type="button">חזרה</button>
+              <div>
+                <h2>סריקת ברקוד</h2>
+                <p class="screen-subtitle">סירקו ברקוד כדי לראות מחיר</p>
+              </div>
+            </div>
+            <div class="scan-layout">
+              <div class="scan-panel">
+                <button class="scan-button" id="scan-button" type="button" aria-label="פתיחת מצלמה לסריקה">
+                  <span class="button-icon">▣</span>
+                  <span>פתיחת מצלמה</span>
+                </button>
+                <div class="scanner-shell hidden" id="scanner-shell">
+                  <div id="reader"></div>
+                  <button class="secondary-button" id="stop-scan-button" type="button">סגירת מצלמה</button>
+                </div>
+                <form class="manual-form" id="manual-form">
+                  <label for="manual-barcode">או הקלדת ברקוד</label>
+                  <div class="input-row">
+                    <input id="manual-barcode" inputmode="numeric" autocomplete="off" placeholder="978..." />
+                    <button type="submit">בדיקה</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </section>
+
+          <section class="customer-screen hidden" id="price-screen">
+            <div class="screen-header">
+              <button class="secondary-button" data-customer-back type="button">חזרה</button>
+              <div>
+                <h2>הצגת הספר</h2>
+              </div>
+            </div>
+            <div class="result-panel" id="result-panel" aria-live="polite">
+              <p class="empty-state">בחרו ספר או סרקו ברקוד כדי לראות מחיר ומלאי.</p>
+            </div>
+          </section>
+
+          <section class="customer-screen hidden" id="cart-screen">
+            <div class="screen-header">
+              <button class="secondary-button" data-customer-back type="button">חזרה</button>
+              <div>
+                <p class="eyebrow">רכישה מרוכזת</p>
+                <h2>סל קנייה</h2>
+              </div>
+            </div>
+            <div class="cart-panel" id="cart-panel"></div>
+          </section>
+
+          <section class="customer-screen hidden" id="search-screen">
+            <div class="screen-header">
+              <button class="secondary-button" data-customer-back type="button">חזרה</button>
+              <div>
+                <p class="eyebrow">חיפוש מהיר</p>
+                <h2>חיפוש ספר</h2>
+              </div>
+            </div>
+            <form class="search-panel" id="book-search-form">
+              <label for="book-search">שם ספר, מחבר או קטגוריה</label>
+              <div class="autocomplete-wrap">
+                <input id="book-search" autocomplete="off" placeholder="התחילו להקליד..." />
+                <div class="suggestions hidden" id="customer-suggestions"></div>
+              </div>
+              <button type="submit">חיפוש</button>
+            </form>
+            <div class="search-results grid-results" id="search-results"></div>
+          </section>
+
+          <section class="customer-screen hidden" id="promotions-screen">
+            <div class="screen-header">
+              <button class="secondary-button" data-customer-back type="button">חזרה</button>
+              <div>
+                <p class="eyebrow">הנחות פעילות</p>
+                <h2>מבצעים</h2>
+              </div>
+            </div>
+            <div class="promotions-list large" id="promotions-list"></div>
+          </section>
+
+          <section class="customer-screen hidden" id="new-books-screen">
+            <div class="screen-header">
+              <button class="secondary-button" data-customer-back type="button">חזרה</button>
+              <div>
+                <p class="eyebrow">הגיעו לאחרונה</p>
+                <h2>ספרים חדשים</h2>
+              </div>
+            </div>
+            <div class="grid-results" id="new-books-list"></div>
+          </section>
+
+          <section class="customer-screen hidden" id="order-screen">
+            <div class="screen-header">
+              <button class="secondary-button" data-customer-back type="button">חזרה</button>
+              <div>
+                <p class="eyebrow">לא מצאתם?</p>
+                <h2>בקשה לספר חסר</h2>
+              </div>
+            </div>
+            <div class="order-step" id="order-search-step">
+              <form class="search-panel" id="order-search-form">
+                <label for="order-search">חיפוש ספר</label>
+                <div class="autocomplete-wrap">
+                  <input id="order-search" autocomplete="off" placeholder="חיפוש ספר..." />
+                  <div class="suggestions hidden" id="order-suggestions"></div>
+                </div>
+                <button type="submit">חיפוש</button>
+              </form>
+              <div class="search-results grid-results" id="order-search-results"></div>
+              <button class="link-button wide" id="show-order-form-button" type="button">לא מצאתי - בקשה שנביא את הספר</button>
+            </div>
+            <form class="order-form hidden" id="order-form">
+              <input id="order-title" required placeholder="שם הספר שחסר לכם" autocomplete="off" />
+              <input id="order-customer-name" required placeholder="השם שלכם" autocomplete="name" />
+              <input id="order-phone" required placeholder="טלפון לחזרה" inputmode="numeric" pattern="[0-9]*" autocomplete="tel" />
+              <textarea id="order-notes" placeholder="הערות נוספות על הספר..." rows="4"></textarea>
+              <div class="form-actions">
+                <button class="secondary-button" id="back-to-order-search" type="button">חזרה לחיפוש</button>
+                <button type="submit">שליחת בקשה</button>
+              </div>
+            </form>
+          </section>
+        </section>
+      </section>
+
+      <section class="view" id="about-view" aria-label="אודות העסק">
+        <section class="about-panel">
+          <button class="secondary-button about-back-button" id="about-back-button" type="button">חזרה למסך הראשי</button>
+          <p class="eyebrow">אודות</p>
+          <h2 id="about-title">על הדוכן</h2>
+          <div class="about-text" id="about-text"></div>
+        </section>
+      </section>
+
+      <section class="view" id="admin-view" aria-label="מסך ניהול">
+        <section class="admin-toolbar">
+          <div>
+            <p class="eyebrow">ניהול מרחוק</p>
+            <h2>קטלוג, מחירים, מבצעים ותשלום</h2>
+            <p id="sync-status" class="sync-status">נטען...</p>
+          </div>
+          <div class="admin-toolbar-actions">
+            <button class="secondary-button" id="return-to-customer-button" type="button">חזרה ללקוח</button>
+            <button class="secondary-button" id="lock-admin-button" type="button">נעילת ניהול</button>
+            <button class="secondary-button" id="undo-button" type="button" disabled>בטל פעולה אחרונה</button>
+            <button class="secondary-button" id="export-button" type="button">ייצוא נתונים</button>
+            <button class="secondary-button" id="import-data-button" type="button">ייבוא נתונים</button>
+            <input id="import-data-file" class="hidden" type="file" accept=".json,application/json" />
+          </div>
+        </section>
+
+        <nav class="admin-tabs" aria-label="לשוניות ניהול">
+          <button class="admin-tab-button active" data-admin-panel-tab="books" type="button">ניהול ספרים</button>
+          <button class="admin-tab-button" data-admin-panel-tab="orders" type="button">הזמנות ספרים</button>
+          <button class="admin-tab-button" data-admin-panel-tab="promotions" type="button">מבצעים</button>
+          <button class="admin-tab-button" data-admin-panel-tab="sales" type="button">מה נקנה</button>
+          <button class="admin-tab-button" data-admin-panel-tab="invoices" type="button">חשבוניות</button>
+          <button class="admin-tab-button" data-admin-panel-tab="slideshow" type="button">תצוגה רצה</button>
+          <button class="admin-tab-button" data-admin-panel-tab="traders" type="button">סוחרים</button>
+          <button class="admin-tab-button" data-admin-panel-tab="settings" type="button">תשלום ואודות</button>
+        </nav>
+
+        <section class="table-section sales-section admin-panel hidden" data-admin-panel="sales">
+          <div class="table-heading">
+            <div>
+              <h3>מה נקנה</h3>
+              <p class="section-note">סיכום רכישות, ספרים שנמכרו ומלאי שדורש תשומת לב.</p>
+            </div>
+          </div>
+          <div class="sales-summary" id="sales-summary"></div>
+          <div class="sales-panels">
+            <article class="sales-panel">
+              <h4>רכישות אחרונות</h4>
+              <div id="recent-sales-list"></div>
+            </article>
+            <article class="sales-panel">
+              <h4>הכי נמכרו</h4>
+              <div id="top-sales-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="table-section inventory-section admin-panel" data-admin-panel="books">
+          <div class="table-heading">
+            <div>
+              <h3>ניהול ספרים</h3>
+              <p class="section-note">העריכה נפתחת בחלון נפרד. מלאי אפשר לעדכן מהר דרך הפלוס והמינוס.</p>
+              <p class="section-note" id="books-count">נטענים ספרים...</p>
+            </div>
+            <div class="table-tools">
+              <div class="autocomplete-wrap">
+                <input id="search-books" placeholder="חיפוש לפי שם, מחבר או ברקוד" autocomplete="off" />
+                <div class="suggestions hidden" id="admin-book-suggestions"></div>
+              </div>
+              <select id="book-sort" aria-label="סידור ספרים">
+                <option value="created-desc">לפי תאריך הוספה</option>
+                <option value="title-asc">לפי א-ב</option>
+                <option value="author-asc">לפי מחבר</option>
+                <option value="price-asc">מחיר נמוך לגבוה</option>
+                <option value="price-desc">מחיר גבוה לנמוך</option>
+                <option value="category-asc">לפי קטגוריה</option>
+                <option value="new-first">חדשים קודם</option>
+                <option value="old-first">לא חדשים קודם</option>
+              </select>
+              <button class="secondary-button" id="clear-books-search" type="button">הצג הכל</button>
+              <button class="table-action" id="add-book-button" type="button">ספר חדש</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ספר</th>
+                  <th>מחיר</th>
+                  <th>במקום</th>
+                  <th>קניה</th>
+                  <th>מלאי</th>
+                  <th>נמכרו</th>
+                  <th>סטטוס</th>
+                  <th>פעולות</th>
+                </tr>
+              </thead>
+              <tbody id="books-table"></tbody>
+            </table>
+          </div>
+          <details class="category-manager book-import-manager">
+            <summary>ייבוא ספרים מקובץ</summary>
+            <div class="category-manager-body book-import-body">
+              <div>
+                <h4>הוספה מהירה למלאי</h4>
+                <p class="section-note">אפשר להעלות CSV/TSV או להדביק טבלה מאקסל. מספיקים שם ספר ומחיר מכירה.</p>
+              </div>
+              <form class="book-import-form" id="book-import-form">
+                <label>
+                  קובץ
+                  <input id="book-import-file" type="file" accept=".csv,.tsv,.txt" multiple />
+                </label>
+                <label>
+                  מלאי התחלתי לספר חדש
+                  <input id="book-import-stock" type="number" min="0" step="1" value="1" />
+                </label>
+                <label class="book-import-paste-label">
+                  הדבקה מאקסל
+                  <textarea id="book-import-paste" rows="3" placeholder="שם ספר	מחיר"></textarea>
+                </label>
+                <button class="table-action" type="submit">ייבוא ספרים</button>
+              </form>
+              <div class="book-import-status" id="book-import-status">עדיין לא בוצע ייבוא.</div>
+            </div>
+          </details>
+          <details class="category-manager">
+            <summary>קטגוריות ספרים</summary>
+            <div class="category-manager-body">
+              <div>
+                <h4>ניהול קטגוריות</h4>
+                <p class="section-note">אפשר להוסיף או להסיר קטגוריות שיופיעו בחלון עריכת ספר.</p>
+              </div>
+              <form class="category-form" id="category-form">
+                <input id="category-name" placeholder="קטגוריה חדשה" autocomplete="off" />
+                <button class="table-action" type="submit">הוספה</button>
+              </form>
+              <div class="category-list" id="category-list"></div>
+            </div>
+          </details>
+        </section>
+
+        <section class="table-section admin-panel hidden" data-admin-panel="promotions">
+          <div class="table-heading">
+            <div>
+              <h3>מבצעים</h3>
+              <p class="section-note">גם מבצעים נערכים בחלון נפרד, כדי שהתצוגה תישאר נקייה.</p>
+            </div>
+            <button class="table-action" id="add-promo-button" type="button">מבצע חדש</button>
+          </div>
+          <div class="admin-list" id="admin-promotions-list"></div>
+        </section>
+
+        <section class="table-section admin-panel hidden" data-admin-panel="orders">
+          <div class="table-heading">
+            <div>
+              <h3>הזמנות ספרים</h3>
+              <p class="section-note">בקשות מלקוחות שלא מצאו ספר בדוכן.</p>
+            </div>
+            <div class="table-tools">
+              <input id="search-orders" placeholder="חיפוש לפי ספר, לקוח או טלפון" autocomplete="off" />
+              <select id="order-status-filter" aria-label="סינון סטטוס הזמנות">
+                <option value="all">הכל</option>
+                <option value="new">ממתין</option>
+                <option value="contacted">יצרנו קשר</option>
+                <option value="ordered">הוזמן</option>
+                <option value="done">הושלם</option>
+                <option value="cancelled">בוטל</option>
+              </select>
+            </div>
+          </div>
+          <form class="admin-order-form" id="admin-order-form">
+            <label>
+              ספר
+              <div class="autocomplete-wrap">
+                <input id="admin-order-title" required autocomplete="off" placeholder="שם הספר להזמנה" />
+                <div class="suggestions hidden" id="admin-order-suggestions"></div>
+              </div>
+            </label>
+            <label>
+              לקוח
+              <input id="admin-order-customer-name" autocomplete="off" placeholder="שם הלקוח" />
+            </label>
+            <label>
+              טלפון
+              <input id="admin-order-phone" inputmode="numeric" pattern="[0-9]*" autocomplete="tel" placeholder="טלפון" />
+            </label>
+            <label>
+              סטטוס
+              <select id="admin-order-status">
+                <option value="new">ממתין</option>
+                <option value="contacted">יצרנו קשר</option>
+                <option value="ordered">הוזמן</option>
+                <option value="done">הושלם</option>
+                <option value="cancelled">בוטל</option>
+              </select>
+            </label>
+            <label>
+              תשלום
+              <select id="admin-order-paid">
+                <option value="false">לא שולם</option>
+                <option value="true">שולם</option>
+              </select>
+            </label>
+            <label class="admin-order-notes">
+              הערות
+              <input id="admin-order-notes" autocomplete="off" placeholder="פרטים נוספים" />
+            </label>
+            <button class="table-action" type="submit">הוספת הזמנה</button>
+          </form>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>שם הספר</th>
+                  <th>לקוח</th>
+                  <th>טלפון</th>
+                  <th>הערות</th>
+                  <th>תאריך</th>
+                  <th>סטטוס</th>
+                  <th>תשלום</th>
+                  <th>פעולות</th>
+                </tr>
+              </thead>
+              <tbody id="orders-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="table-section invoices-section admin-panel hidden" data-admin-panel="invoices">
+          <div class="table-heading">
+            <div>
+              <h3>חשבוניות</h3>
+              <p class="section-note">העלאת חשבוניות, קבלות וזיכויים, עם סינון לפי חודש, ספק, סוג מסמך וסטטוס.</p>
+            </div>
+          </div>
+          <form class="invoice-upload-form" id="invoice-upload-form">
+            <label>
+              קובץ חשבונית / קבלה / זיכוי
+              <input id="invoice-file" type="file" accept=".pdf,image/*" multiple required />
+            </label>
+            <label>
+              ספק
+              <input id="invoice-supplier" required autocomplete="off" placeholder="שם הספק" />
+            </label>
+            <label>
+              מספר מסמך
+              <input id="invoice-number" autocomplete="off" placeholder="לדוגמה: 01000383" />
+            </label>
+            <label>
+              תאריך
+              <input id="invoice-date" type="date" required />
+            </label>
+            <label>
+              סוג מסמך
+              <select id="invoice-type">
+                <option value="invoice">חשבונית מס</option>
+                <option value="receipt">קבלה</option>
+                <option value="invoice_receipt">חשבונית מס קבלה</option>
+                <option value="credit">חשבונית זיכוי</option>
+              </select>
+            </label>
+            <label>
+              סכום
+              <input id="invoice-amount" type="number" min="0" step="0.01" />
+            </label>
+            <label>
+              סטטוס
+              <select id="invoice-status">
+                <option value="review">לבדיקה</option>
+                <option value="approved">אושר</option>
+                <option value="paid">שולם</option>
+              </select>
+            </label>
+            <label class="wide-field">
+              הערות
+              <textarea id="invoice-notes" rows="3" placeholder="לדוגמה: נקנה למלאי ילדים / משלוח / זיכוי חלקי"></textarea>
+            </label>
+            <div class="invoice-detect-box" id="invoice-auto-detect" role="status" aria-live="polite">
+              <strong>זיהוי אוטומטי</strong>
+              <span>בחרו קובץ אחד לבדיקה, או גררו כמה קבצים לכאן לשמירה מרובה.</span>
+            </div>
+            <button class="table-action" type="submit">שמירת חשבונית</button>
+          </form>
+          <section class="gemini-test-panel" aria-label="ניסוי פענוח חשבונית עם Gemini">
+            <div>
+              <h4>ניסוי פענוח Gemini</h4>
+              <p class="section-note">PDF אחד לבדיקה. התוצאה מוצגת כאן בלבד ולא מעדכנת מלאי.</p>
+            </div>
+            <form class="gemini-test-form" id="gemini-invoice-form">
+              <label>
+                Gemini API Key
+                <input id="gemini-api-key" type="password" autocomplete="off" placeholder="הדבקת מפתח זמני לניסוי" />
+              </label>
+              <label>
+                חשבונית PDF
+                <input id="gemini-invoice-file" type="file" accept=".pdf,application/pdf" />
+              </label>
+              <button class="table-action" type="submit">שלח ל-Gemini</button>
+            </form>
+            <div class="gemini-status" id="gemini-status">עדיין לא נשלחה חשבונית.</div>
+            <div class="gemini-output hidden" id="gemini-output"></div>
+          </section>
+          <div class="invoice-filters">
+            <label>
+              חודש
+              <input id="invoice-month-filter" type="month" />
+            </label>
+            <label>
+              ספק
+              <select id="invoice-supplier-filter">
+                <option value="all">כל הספקים</option>
+              </select>
+            </label>
+            <label>
+              סוג מסמך
+              <select id="invoice-type-filter">
+                <option value="all">כל הסוגים</option>
+                <option value="invoice">חשבוניות מס</option>
+                <option value="receipt">קבלות</option>
+                <option value="invoice_receipt">חשבוניות מס קבלה</option>
+                <option value="credit">חשבוניות זיכוי</option>
+              </select>
+            </label>
+            <label>
+              סטטוס
+              <select id="invoice-status-filter">
+                <option value="all">כל הסטטוסים</option>
+                <option value="review">לבדיקה</option>
+                <option value="approved">אושרו</option>
+                <option value="paid">שולמו</option>
+              </select>
+            </label>
+          </div>
+          <div class="invoice-summary" id="invoice-summary">
+            <article>
+              <span>0</span>
+              <strong>חשבוניות שמורות</strong>
+            </article>
+            <article>
+              <span>-</span>
+              <strong>חודש נבחר</strong>
+            </article>
+            <article>
+              <span>-</span>
+              <strong>ספק נבחר</strong>
+            </article>
+          </div>
+          <div class="invoice-list" id="invoice-list"></div>
+        </section>
+
+        <section class="table-section admin-panel hidden" data-admin-panel="slideshow">
+          <div class="table-heading">
+            <div>
+              <h3>תצוגה רצה בטאבלט</h3>
+              <p class="section-note">כשהטאבלט לא בשימוש, יוצגו שקופיות של מבצעים, ספרים חדשים ושקופיות שתיצור כאן.</p>
+            </div>
+            <button class="table-action" id="add-slide-button" type="button">שקופית חדשה</button>
+          </div>
+          <form class="slideshow-settings" id="slideshow-settings-form">
+            <label class="check-row">
+              <input id="slideshow-enabled" type="checkbox" />
+              להפעיל תצוגה רצה אוטומטית
+            </label>
+            <label>
+              מעבר לתצוגה אחרי חוסר פעילות
+              <input id="slideshow-idle-seconds" type="number" min="10" step="5" />
+            </label>
+            <label>
+              זמן ברירת מחדל לכל שקופית
+              <input id="slideshow-slide-seconds" type="number" min="3" step="1" />
+            </label>
+            <button class="table-action" type="submit">שמירת הגדרות תצוגה</button>
+          </form>
+          <div class="slideshow-preview-list" id="slideshow-preview-list"></div>
+          <div class="admin-list" id="admin-slides-list"></div>
+        </section>
+
+        <section class="table-section traders-section admin-panel hidden" data-admin-panel="traders">
+          <div class="table-heading">
+            <div>
+              <h3>סוחרים</h3>
+              <p class="section-note">מחירון סוחרים לפי ספר וסוחר.</p>
+            </div>
+          </div>
+          <form class="trader-price-form" id="trader-price-form">
+            <label>
+              ספר
+              <div class="autocomplete-wrap">
+                <input id="trader-book-title" required autocomplete="off" placeholder="שם הספר" />
+                <div class="suggestions hidden" id="trader-book-suggestions"></div>
+              </div>
+            </label>
+            <label>
+              מחיר רגיל
+              <input id="trader-regular-price" type="number" min="0" step="0.01" />
+            </label>
+            <label>
+              מחיר חודש הספר
+              <input id="trader-dealer-price" type="number" min="0" step="0.01" required />
+            </label>
+            <label>
+              סוחר
+              <input id="trader-name" required autocomplete="off" placeholder="שם הסוחר" />
+            </label>
+            <button class="table-action" type="submit">שמירת מחיר חודש הספר</button>
+          </form>
+          <div class="trader-directory-block">
+            <h4 class="subsection-title">לפי סוחר</h4>
+            <div class="trader-directory" id="trader-directory"></div>
+          </div>
+          <div class="trader-directory-block">
+            <h4 class="subsection-title">לפי ספר</h4>
+            <div class="trader-directory" id="trader-book-directory"></div>
+          </div>
+          <section class="trader-active-panel hidden" id="trader-active-panel">
+            <div class="trader-active-heading">
+              <div>
+                <p class="eyebrow">מחירון סוחר</p>
+                <h4 id="active-trader-name">סוחר</h4>
+              </div>
+              <button class="secondary-button" id="close-active-trader" type="button">חזרה לכל הסוחרים</button>
+            </div>
+            <div class="admin-list trader-prices-list" id="active-trader-prices-list"></div>
+          </section>
+          <section class="trader-active-panel hidden" id="trader-active-book-panel">
+            <div class="trader-active-heading">
+              <div>
+                <p class="eyebrow">מחירון לפי ספר</p>
+                <h4 id="active-trader-book-name">ספר</h4>
+              </div>
+              <button class="secondary-button" id="close-active-trader-book" type="button">חזרה לכל הספרים</button>
+            </div>
+            <div class="admin-list trader-prices-list" id="active-trader-book-prices-list"></div>
+          </section>
+          <h4 class="subsection-title">כל מחירי חודש הספר</h4>
+          <div class="admin-list trader-prices-list" id="trader-prices-list"></div>
+        </section>
+
+        <section class="admin-grid admin-settings admin-panel hidden" data-admin-panel="settings">
+          <form class="admin-form compact-admin-form" id="payment-form">
+            <h3>אפשרויות תשלום</h3>
+            <label>
+              קישור לתמונת QR של Bit
+              <input id="admin-bit-qr-url" placeholder="https://..." />
+            </label>
+            <label>
+              פרטי Bit
+              <input id="admin-bit-details" placeholder="לדוגמה: להעביר ל-050..." />
+            </label>
+            <label>
+              פרטים להעברה בנקאית
+              <textarea id="admin-bank-details" rows="5"></textarea>
+            </label>
+            <label>
+              הסבר נוסף לתשלום
+              <textarea id="admin-payment-notes" rows="5"></textarea>
+            </label>
+            <button type="submit">שמירת פרטי תשלום</button>
+          </form>
+
+          <form class="admin-form compact-admin-form" id="about-form">
+            <h3>פרטי עסק ואודות</h3>
+            <label>
+              שם העסק
+              <input id="admin-business-name" />
+            </label>
+            <label>
+              תיאור קצר
+              <input id="admin-business-tagline" />
+            </label>
+            <label>
+              כותרת אודות
+              <input id="admin-about-title" />
+            </label>
+            <label>
+              טקסט שיופיע ללקוחות
+              <textarea id="admin-about-text" rows="7"></textarea>
+            </label>
+            <button type="submit">שמירת פרטי עסק</button>
+          </form>
+
+          <form class="admin-form compact-admin-form security-form" id="security-form">
+            <h3>סיסמת ניהול</h3>
+            <p class="section-note">שינוי הסיסמה שפותחת את אזור הניהול בטאבלט.</p>
+            <label>
+              סיסמה חדשה
+              <input id="admin-new-pin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="לפחות 4 ספרות" />
+            </label>
+            <label>
+              אימות סיסמה
+              <input id="admin-confirm-pin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="הקלד שוב" />
+            </label>
+            <button type="submit">שמירת סיסמת ניהול</button>
+          </form>
+        </section>
+      </section>
+    </main>
+
+    <dialog class="modal" id="book-dialog">
+      <form method="dialog" class="modal-card" id="book-dialog-form">
+        <div class="modal-heading">
+          <h3 id="book-dialog-title">ספר חדש</h3>
+          <button class="icon-button" value="cancel" type="button" data-close-dialog="book-dialog" aria-label="סגירה">×</button>
+        </div>
+        <input id="book-id" type="hidden" />
+        <div class="form-grid">
+          <label>
+            שם הספר *
+            <input id="book-title" required autocomplete="off" />
+          </label>
+          <label>
+            מחבר
+            <input id="book-author" autocomplete="off" />
+          </label>
+          <label class="wide-field">
+            ברקוד *
+            <div class="input-row admin-barcode-row">
+              <input id="book-barcode" required inputmode="numeric" autocomplete="off" />
+              <button class="secondary-button compact-button" id="scan-book-barcode-button" type="button">סריקה במצלמה</button>
+            </div>
+          </label>
+          <div class="scanner-shell admin-scanner-shell hidden wide-field" id="admin-barcode-scanner-shell">
+            <div id="admin-barcode-reader"></div>
+            <button class="secondary-button" id="stop-admin-barcode-scan-button" type="button">סגירת מצלמה</button>
+          </div>
+          <label>
+            קטגוריה
+            <select id="book-category">
+              <option value="ספרות">ספרות</option>
+              <option value="ילדים">ילדים</option>
+              <option value="עיון">עיון</option>
+              <option value="לימוד">לימוד</option>
+              <option value="אחר">אחר</option>
+            </select>
+          </label>
+          <label>
+            מחיר לקוח *
+            <input id="book-price" required type="number" min="0" step="1" />
+          </label>
+          <label>
+            במקום מחיר
+            <input id="book-original-price" type="number" min="0" step="1" />
+          </label>
+          <label>
+            מלאי
+            <input id="book-stock" required type="number" min="0" step="1" />
+          </label>
+          <label class="check-row">
+            <input id="book-is-new" type="checkbox" />
+            ספר חדש
+          </label>
+          <label class="check-row">
+            <input id="book-is-on-sale" type="checkbox" />
+            ספר במבצע
+          </label>
+          <label class="check-row">
+            <input id="book-show-in-slideshow" type="checkbox" />
+            הצג בתצוגה הרצה
+          </label>
+          <label class="wide-field">
+            תיאור ללקוח
+            <textarea id="book-description" rows="4" placeholder="תיאור קצר שיופיע ללקוח בהצגת הספר"></textarea>
+          </label>
+          <label class="wide-field">
+            הערות פנימיות לניהול
+            <textarea id="book-notes" rows="3" placeholder="הערות שרק הניהול רואה"></textarea>
+          </label>
+          <label>
+            סכום קניה
+            <input id="book-purchase-cost" type="number" min="0" step="0.1" />
+          </label>
+          <label>
+            מאיפה נקנה
+            <input id="book-purchase-source" autocomplete="off" />
+          </label>
+          <label class="wide-field">
+            תמונה
+            <input id="book-image-url" placeholder="https://..." />
+          </label>
+          <label class="wide-field">
+            העלאת תמונה מהמחשב
+            <input id="book-image-file" type="file" accept="image/*" />
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="danger-button hidden" id="delete-book-from-dialog" type="button">מחיקת ספר</button>
+          <button class="secondary-button" type="button" data-close-dialog="book-dialog">ביטול</button>
+          <button class="table-action" type="submit">שמירה</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal confirm-modal" id="delete-book-dialog">
+      <div class="modal-card small-modal-card">
+        <div class="modal-heading">
+          <h3>למחוק את הספר?</h3>
+          <button class="icon-button" type="button" data-close-dialog="delete-book-dialog" aria-label="סגירה">×</button>
+        </div>
+        <p id="delete-book-confirm-text">הספר יוסר מהמלאי ומהניהול.</p>
+        <div class="form-actions">
+          <button class="secondary-button" type="button" data-close-dialog="delete-book-dialog">לא, להשאיר</button>
+          <button class="danger-button" id="confirm-delete-book-button" type="button">כן, למחוק</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="modal" id="promo-dialog">
+      <form method="dialog" class="modal-card" id="promo-dialog-form">
+        <div class="modal-heading">
+          <h3 id="promo-dialog-title">מבצע חדש</h3>
+          <button class="icon-button" value="cancel" type="button" data-close-dialog="promo-dialog" aria-label="סגירה">×</button>
+        </div>
+        <input id="promo-id" type="hidden" />
+        <div class="form-grid">
+          <label class="wide-field">
+            כותרת המבצע *
+            <input id="promo-title" required placeholder="לדוגמה: 3 ספרים ב-100" />
+          </label>
+          <label class="wide-field">
+            תיאור
+            <textarea id="promo-details-input" rows="4" placeholder="פרטים נוספים על המבצע"></textarea>
+          </label>
+          <label>
+            תמונה
+            <input id="promo-image-url" placeholder="https://..." />
+          </label>
+          <label>
+            סדר תצוגה
+            <input id="promo-sort-order" type="number" min="0" step="1" />
+          </label>
+          <label class="check-row">
+            <input id="promo-active" type="checkbox" checked />
+            מבצע פעיל
+          </label>
+          <label class="check-row">
+            <input id="promo-show-in-slideshow" type="checkbox" checked />
+            הצג בתצוגה הרצה
+          </label>
+          <label class="check-row">
+            <input id="promo-show-in-banner" type="checkbox" checked />
+            הצג בשורת המבצעים בדף הלקוח
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="secondary-button" type="button" data-close-dialog="promo-dialog">ביטול</button>
+          <button class="table-action" type="submit">שמירה</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="slide-dialog">
+      <form method="dialog" class="modal-card" id="slide-dialog-form">
+        <div class="modal-heading">
+          <h3 id="slide-dialog-title">שקופית חדשה</h3>
+          <button class="icon-button" value="cancel" type="button" data-close-dialog="slide-dialog" aria-label="סגירה">×</button>
+        </div>
+        <input id="slide-id" type="hidden" />
+        <div class="form-grid">
+          <label class="wide-field">
+            כותרת *
+            <input id="slide-title" required placeholder="לדוגמה: ספרים חדשים הגיעו" />
+          </label>
+          <label class="wide-field">
+            טקסט
+            <textarea id="slide-text" rows="4" placeholder="הטקסט שיופיע על הטאבלט"></textarea>
+          </label>
+          <label>
+            תמונה
+            <input id="slide-image-url" placeholder="https://..." />
+          </label>
+          <label>
+            צבע רקע
+            <input id="slide-bg-color" type="color" value="#00a88f" />
+          </label>
+          <label>
+            זמן הצגה בשניות
+            <input id="slide-duration" type="number" min="3" step="1" />
+          </label>
+          <label>
+            סדר תצוגה
+            <input id="slide-sort-order" type="number" min="0" step="1" />
+          </label>
+          <label class="check-row">
+            <input id="slide-active" type="checkbox" checked />
+            שקופית פעילה
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="secondary-button" type="button" data-close-dialog="slide-dialog">ביטול</button>
+          <button class="table-action" type="submit">שמירה</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="payment-dialog">
+      <div class="modal-card">
+        <div class="modal-heading">
+          <h3>מידע כללי ותשלום</h3>
+          <button class="icon-button" type="button" data-close-dialog="payment-dialog" aria-label="סגירה">×</button>
+        </div>
+        <div class="payment-grid">
+          <article class="payment-box">
+            <h3>Bit</h3>
+            <div class="qr-box" id="bit-qr-box"></div>
+            <p id="bit-details"></p>
+          </article>
+          <article class="payment-box">
+            <h3>העברה בנקאית</h3>
+            <p id="bank-details"></p>
+          </article>
+          <article class="payment-box payment-notes-box">
+            <p id="payment-notes"></p>
+          </article>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="modal purchase-modal" id="purchase-confirm-dialog">
+      <div class="modal-card">
+        <div class="modal-heading">
+          <h3>תשלום ורכישה</h3>
+          <button class="icon-button" type="button" data-close-dialog="purchase-confirm-dialog" aria-label="סגירה">×</button>
+        </div>
+        <p id="purchase-confirm-text">בדקו את פרטי התשלום וסמנו מה נקנה.</p>
+        <div class="checkout-cart-summary" id="purchase-cart-summary"></div>
+        <div class="purchase-payment-layout">
+          <article class="payment-box">
+            <h3>Bit</h3>
+            <div class="qr-box" id="purchase-bit-qr-box"></div>
+            <p id="purchase-bit-details"></p>
+          </article>
+          <article class="payment-box">
+            <h3>העברה בנקאית</h3>
+            <p id="purchase-bank-details"></p>
+          </article>
+          <article class="payment-box">
+            <h3>הסבר לתשלום</h3>
+            <p id="purchase-payment-notes"></p>
+          </article>
+        </div>
+        <label class="wide-field purchase-manual-book-field hidden">
+          איזה ספר קנית?
+          <div class="autocomplete-wrap">
+            <input id="purchase-book-title" autocomplete="off" />
+            <div class="suggestions hidden" id="purchase-book-suggestions"></div>
+          </div>
+        </label>
+        <div class="form-actions">
+          <button class="secondary-button" type="button" data-close-dialog="purchase-confirm-dialog">ביטול</button>
+          <button class="table-action" id="confirm-purchase-button" type="button">שילמתי וקניתי</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="modal confirm-modal" id="clear-cart-dialog">
+      <div class="modal-card small-modal-card">
+        <div class="modal-heading">
+          <h3>לנקות את סל הקנייה?</h3>
+          <button class="icon-button" type="button" data-close-dialog="clear-cart-dialog" aria-label="סגירה">×</button>
+        </div>
+        <p>כל הספרים שנבחרו יוסרו מהסל.</p>
+        <div class="form-actions">
+          <button class="secondary-button" type="button" data-close-dialog="clear-cart-dialog">לא, להשאיר</button>
+          <button class="danger-button" id="confirm-clear-cart-button" type="button">כן, לנקות סל</button>
+        </div>
+      </div>
+    </dialog>
+
+    <section class="idle-slideshow hidden" id="idle-slideshow" aria-live="polite">
+      <button class="idle-slideshow-close" id="idle-slideshow-close" type="button">חזרה למסך הראשי</button>
+      <div class="idle-slide" id="idle-slide"></div>
+      <div class="idle-slide-dots" id="idle-slide-dots"></div>
+    </section>
+
+    <dialog class="modal confirm-modal" id="undo-dialog">
+      <div class="modal-card small-modal-card">
+        <div class="modal-heading">
+          <h3>לבטל פעולה אחרונה?</h3>
+          <button class="icon-button" type="button" data-close-dialog="undo-dialog" aria-label="סגירה">×</button>
+        </div>
+        <p id="undo-confirm-text">הפעולה האחרונה תבוטל.</p>
+        <div class="form-actions">
+          <button class="secondary-button" type="button" data-close-dialog="undo-dialog">לא, להשאיר</button>
+          <button class="danger-button" id="confirm-undo-button" type="button">כן, לבטל</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="modal confirm-modal" id="admin-access-dialog">
+      <form method="dialog" class="modal-card small-modal-card" id="admin-access-form">
+        <div class="modal-heading">
+          <h3>כניסת מנהל</h3>
+          <button class="icon-button" type="button" data-close-dialog="admin-access-dialog" aria-label="סגירה">×</button>
+        </div>
+        <p>הכניסו קוד מנהל כדי לפתוח את הניהול בטאבלט.</p>
+        <label>
+          קוד מנהל
+          <input id="admin-pin-input" type="password" inputmode="numeric" autocomplete="off" />
+        </label>
+        <div class="form-actions">
+          <button class="secondary-button" type="button" data-close-dialog="admin-access-dialog">ביטול</button>
+          <button class="table-action" type="submit">כניסה</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js?v=20260721-gemini-invoice-test"></script>
+  </body>
+</html>
