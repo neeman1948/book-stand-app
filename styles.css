@@ -462,7 +462,7 @@ h3 {
   width: 100%;
   min-height: 190px;
   border-radius: 28px;
-  background: #0f9b88;
+  background: #0aab9a;
   color: white;
   font-size: clamp(1.6rem, 4vw, 2.4rem);
   font-weight: 900;
@@ -567,8 +567,18 @@ textarea {
 #kiosk-view .order-form button:not(.secondary-button),
 #kiosk-view .search-panel button {
   border-radius: 18px;
-  background: #118cbd;
+  background: #0aab9a;
   font-size: 1.04rem;
+  box-shadow: 0 12px 22px -10px rgba(10, 171, 154, 0.55);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+#kiosk-view .input-row button:active,
+#kiosk-view .order-form button:not(.secondary-button):active,
+#kiosk-view .search-panel button:active {
+  transform: translateY(2px) scale(0.98);
+  box-shadow: 0 6px 12px -8px rgba(10, 171, 154, 0.45);
+  filter: brightness(0.94);
 }
 
 .secondary-button {
@@ -579,6 +589,12 @@ textarea {
   padding: 0 16px;
   font-weight: 800;
   border: 1px solid rgba(15, 155, 136, 0.28);
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.secondary-button:active {
+  transform: scale(0.97);
+  filter: brightness(0.96);
 }
 
 .link-button {
@@ -741,10 +757,18 @@ textarea {
 .purchase-button {
   min-height: 76px;
   border-radius: 22px;
-  background: #0f9b88;
+  background: #0aab9a;
   color: white;
   font-size: 1.35rem;
   font-weight: 900;
+  box-shadow: 0 14px 26px -10px rgba(10, 171, 154, 0.5);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.purchase-button:active {
+  transform: translateY(3px) scale(0.97);
+  box-shadow: 0 8px 14px -8px rgba(10, 171, 154, 0.4);
+  filter: brightness(0.94);
 }
 
 .cart-nav-button,
