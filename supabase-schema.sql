@@ -118,3 +118,55 @@ values
   ('דירה להשכיר', 'לאה גולדברג', '9789650701066', 'ילדים', 35, 45, 6, 0, 'ספר ילדים קלאסי.', '', '', true, now() - interval '1 day'),
   ('אליפים', 'אסתר שטרייט-וורצל', '9789650710037', 'ספרות', 30, 40, 2, 0, '', '', '', false, now() - interval '15 days')
 on conflict (barcode) do nothing;
+
+-- אבטחת שורות (RLS) - נוסף ב-2026-08-03
+--
+-- חשוב להבין את הגבול של החלק הזה: האפליקציה כרגע לא מבחינה בין "לקוח בדוכן" ל"בעל העסק
+-- שמחובר לניהול" מול Supabase עצמו - שניהם משתמשים באותו מפתח anon ציבורי. בלי מנגנון
+-- התחברות אמיתי (Supabase Auth) לא ניתן להגביל כתיבה רק לבעל העסק בלי גם לשבור פעולות
+-- לקוח לגיטימיות (קנייה, בקשת ספר). מה שבכל זאת עשינו כאן:
+--   1. הדלקנו RLS על כל הטבלאות בפועל (במקום שהן פתוחות לחלוטין כברירת מחדל).
+--   2. הרשינו לתפקיד anon את כל הפעולות שהאפליקציה כן צריכה היום (קריאה, הוספה, עדכון),
+--      כדי לא לשבור שום דבר שעובד.
+--   3. לא הגדרנו מדיניות מחיקה (delete) לתפקיד anon - כלומר מחיקה חסומה כרגע גם למנהל
+--      וגם לכל אחד אחר. זה מכוון: כל עוד אין הבחנה אמיתית בין מנהל ללקוח, מחיקה מרוחקת
+--      אסורה כברירת מחדל. אם/כשתרצו לאפשר מחיקה מרחוק (מחיקת ספר/הזמנה מהניהול כשה-
+--      אפליקציה מחוברת ל-Supabase), הדרך הנכונה היא להוסיף Supabase Auth למנהל ואז
+--      מדיניות delete שדורשת auth.role() = 'authenticated' - לא להרשות delete ל-anon.
+--
+-- המשמעות בפועל: מפתח ה-anon שיושב גלוי ב-config.js עדיין יכול לקרוא ולשנות מחירים/מלאי/
+-- הגדרות אם מישהו ידע להשתמש בו ישירות מול המסד, אבל לא יכול למחוק שורות. הגנה אמיתית
+-- על עריכה דורשת Auth אמיתי למנהל - זו עבודה נפרדת שכדאי לעשות ביחד כשתחברו Supabase בפועל.
+
+alter table public.books enable row level security;
+alter table public.book_orders enable row level security;
+alter table public.settings enable row level security;
+alter table public.sales enable row level security;
+
+drop policy if exists "anon can read books" on public.books;
+create policy "anon can read books" on public.books for select using (true);
+drop policy if exists "anon can add books" on public.books;
+create policy "anon can add books" on public.books for insert with check (true);
+drop policy if exists "anon can update books" on public.books;
+create policy "anon can update books" on public.books for update using (true) with check (true);
+
+drop policy if exists "anon can read orders" on public.book_orders;
+create policy "anon can read orders" on public.book_orders for select using (true);
+drop policy if exists "anon can add orders" on public.book_orders;
+create policy "anon can add orders" on public.book_orders for insert with check (true);
+drop policy if exists "anon can update orders" on public.book_orders;
+create policy "anon can update orders" on public.book_orders for update using (true) with check (true);
+
+drop policy if exists "anon can read settings" on public.settings;
+create policy "anon can read settings" on public.settings for select using (true);
+drop policy if exists "anon can add settings" on public.settings;
+create policy "anon can add settings" on public.settings for insert with check (true);
+drop policy if exists "anon can update settings" on public.settings;
+create policy "anon can update settings" on public.settings for update using (true) with check (true);
+
+drop policy if exists "anon can read sales" on public.sales;
+create policy "anon can read sales" on public.sales for select using (true);
+drop policy if exists "anon can add sales" on public.sales;
+create policy "anon can add sales" on public.sales for insert with check (true);
+drop policy if exists "anon can update sales" on public.sales;
+create policy "anon can update sales" on public.sales for update using (true) with check (true);

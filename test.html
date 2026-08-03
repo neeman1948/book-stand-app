@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <title>בדיקות אוטומטיות - דוכן ספרים</title>
+    <style>
+      #test-panel { font-family: system-ui, sans-serif; padding: 24px; background: #0b0f14; color: #e5e7eb; }
+      #test-panel .pass { color: #4ade80; }
+      #test-panel .fail { color: #f87171; font-weight: bold; }
+      #test-panel .case { padding: 6px 0; border-bottom: 1px solid #1f2937; }
+      #test-summary { font-size: 1.2em; margin-bottom: 16px; padding: 12px; border-radius: 8px; }
+      #test-summary.ok { background: #14532d; }
+      #test-summary.bad { background: #7f1d1d; }
+      #app-mount { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="test-panel">
+      <h1>בדיקות אוטומטיות לאפליקציית דוכן הספרים</h1>
+      <p>
+        בודק שהפעולות המרכזיות (חיפוש, סל, תשלום, בקשת ספר, ניהול, הגנה מפני הזרקת HTML) עדיין
+        עובדות נכון אחרי שינויים בקוד. האפליקציה עצמה נטענת בלי להיראות, בתוך <code>#app-mount</code>
+        למטה, כדי שכל הפונקציות ב-app.js ימצאו את האלמנטים שהן מצפות להם.
+      </p>
+      <div id="test-summary">טוען את האפליקציה כדי להריץ בדיקות...</div>
+      <div id="test-log"></div>
+    </div>
+
+    <div id="app-mount"></div>
+
+    <script>
+      (async function () {
+        const snapshot = { local: Object.assign({}, localStorage), session: Object.assign({}, sessionStorage) };
+        localStorage.clear();
+        sessionStorage.clear();
+
+        function restoreStorage() {
+          localStorage.clear();
+          sessionStorage.clear();
+          Object.keys(snapshot.local).forEach((key) => localStorage.setItem(key, snapshot.local[key]));
+          Object.keys(snapshot.session).forEach((key) => sessionStorage.setItem(key, snapshot.session[key]));
+        }
+
+        function loadScript(src) {
+          return new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error("נכשל בטעינת " + src));
+            document.body.appendChild(script);
+          });
+        }
+
+        function wait(ms) {
+          return new Promise((resolve) => setTimeout(resolve, ms));
+        }
+
+        const results = [];
+        function assert(condition, name) {
+          results.push({ name, pass: Boolean(condition) });
+        }
+
+        function renderResults() {
+          const summary = document.getElementById("test-summary");
+          const log = document.getElementById("test-log");
+          const failed = results.filter((r) => !r.pass);
+          summary.textContent = results.length
+            ? (failed.length ? `נכשלו ${failed.length} מתוך ${results.length} בדיקות` : `כל ${results.length} הבדיקות עברו בהצלחה`)
+            : "לא רצה שום בדיקה - שגיאה בטעינת האפליקציה, ראו קונסול.";
+          summary.className = failed.length || !results.length ? "bad" : "ok";
+          log.innerHTML = results
+            .map((r) => `<div class="case"><span class="${r.pass ? "pass" : "fail"}">${r.pass ? "✔" : "✘"}</span> ${r.name}</div>`)
+            .join("");
+          window.__testResults = results;
+        }
+
+        try {
+          // מביא את ה-HTML האמיתי של index.html כדי שלכל הפונקציות ב-app.js יהיו האלמנטים
+          // שהן מצפות להם (טפסים, טבלאות, חלונות) - בלי לשמור עותק כפול ומיושן של המבנה כאן.
+          const indexResponse = await fetch("./index.html");
+          const indexHtml = await indexResponse.text();
+          const parsed = new DOMParser().parseFromString(indexHtml, "text/html");
+          const mount = document.getElementById("app-mount");
+          Array.from(parsed.body.children).forEach((node) => {
+            if (node.tagName === "SCRIPT") return;
+            mount.appendChild(node);
+          });
+
+          await loadScript("./config.js");
+          await loadScript("./app.js?test=1");
+          await wait(300);
+
+          const harryResults = searchBooks("הארי");
+          assert(harryResults.length === 1 && harryResults[0].title.includes("הארי"), "חיפוש לפי שם חלקי מוצא את הספר הנכון");
+          const harry = harryResults[0];
+          const stockBefore = harry.stock;
+          const soldBefore = harry.sold;
+
+          addToCart(harry, 1);
+          assert(getCartLines().length === 1 && getCartLines()[0].quantity === 1, "הוספה לסל מוסיפה שורה אחת בכמות 1");
+
+          await confirmCartPurchase();
+          const harryAfter = state.books.find((b) => b.id === harry.id);
+          assert(harryAfter.stock === stockBefore - 1, "תשלום מוריד מלאי ביחידה אחת");
+          assert(harryAfter.sold === soldBefore + 1, "תשלום מעלה את מספר היחידות שנמכרו");
+          assert(state.sales.some((s) => s.bookId === harry.id), "תשלום יוצר רשומת מכירה לספר");
+          assert(getCartLines().length === 0, "הסל מתרוקן אחרי תשלום");
+
+          const zeroStockBook = state.books.find((b) => b.title.includes("אליפים"));
+          zeroStockBook.stock = 0;
+          const soldZeroBefore = zeroStockBook.sold;
+          addToCart(zeroStockBook, 1);
+          await confirmCartPurchase();
+          const zeroStockAfter = state.books.find((b) => b.id === zeroStockBook.id);
+          assert(zeroStockAfter.stock === 0, "מלאי רשום 0 לא יורד מתחת לאפס אחרי קנייה");
+          assert(zeroStockAfter.sold === soldZeroBefore + 1, "המכירה נספרת גם כשהמלאי הרשום היה 0");
+
+          const ordersBefore = state.orders.length;
+          await persistOrder({ id: newId(), title: "ספר בדיקה", customerName: "בדיקה אוטומטית", phone: "0500000000" });
+          assert(state.orders.length === ordersBefore + 1, "בקשת ספר חסר נשמרת ברשימת ההזמנות");
+
+          const maliciousTitle = '<img src=x onerror="window.__xssFired=true">';
+          const cardHtml = renderBookCard(normalizeBook({ id: "xss-test", title: maliciousTitle, price: 10, stock: 1 }));
+          const probe = document.createElement("div");
+          probe.innerHTML = cardHtml;
+          assert(probe.querySelector("img") === null, "כותרת ספר עם תג HTML לא נכנסת כתג אמיתי לדף");
+          assert(probe.textContent.includes("<img"), "כותרת ספר עם תג HTML מוצגת כטקסט רגיל");
+
+          state.adminUnlocked = false;
+          unlockAdmin("0000");
+          assert(state.adminUnlocked === false, "קוד מנהל שגוי לא פותח את הניהול");
+          unlockAdmin(getAdminPin());
+          assert(state.adminUnlocked === true, "קוד המנהל הנכון פותח את הניהול");
+
+          const messyBarcode = harry.barcode.slice(0, 3) + "-" + harry.barcode.slice(3, 6) + " " + harry.barcode.slice(6);
+          const foundByMessyBarcode = findBookByBarcode(messyBarcode);
+          assert(foundByMessyBarcode && foundByMessyBarcode.id === harry.id, "חיפוש ברקוד סלחני מוצא ספר גם עם רווחים ומקפים");
+        } catch (error) {
+          assert(false, "הבדיקות נכשלו עם שגיאה בלתי צפויה: " + error.message);
+          console.error(error);
+        } finally {
+          restoreStorage();
+          renderResults();
+        }
+      })();
+    </script>
+  </body>
+</html>
