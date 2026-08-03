@@ -841,6 +841,7 @@ textarea {
   display: grid;
   align-content: center;
   gap: 6px;
+  box-shadow: 0 12px 24px rgba(15, 117, 103, 0.07);
 }
 
 .cart-summary span {
@@ -867,6 +868,7 @@ textarea {
   background: white;
   border-radius: 22px;
   padding: 12px;
+  box-shadow: 0 12px 24px rgba(15, 117, 103, 0.07);
 }
 
 .cart-item-copy {
@@ -907,6 +909,11 @@ textarea {
   color: var(--green-dark);
   font-size: 1.25rem;
   font-weight: 900;
+  transition: background 0.12s ease;
+}
+
+.cart-qty-controls button:active {
+  background: rgba(10, 171, 154, 0.18);
 }
 
 .cart-qty-controls span {
@@ -1091,13 +1098,13 @@ textarea {
   border: 0;
   border-radius: 26px;
   padding: 20px;
-  background: linear-gradient(135deg, #ffffff 0%, #fff8dc 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #fff3d6 100%);
   display: grid;
   align-content: center;
   text-align: center;
   font-weight: 800;
-  color: #0d8f82;
-  box-shadow: 0 16px 32px rgba(15, 117, 103, 0.09);
+  color: #a85f00;
+  box-shadow: 0 16px 32px rgba(240, 165, 0, 0.14);
 }
 
 .promo-chip img {
