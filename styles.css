@@ -266,15 +266,17 @@ h3 {
 }
 
 .customer-actions {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 12px;
-  overflow-x: auto;
   padding-bottom: 4px;
 }
 
 .action-tile {
   aspect-ratio: 1;
+  width: 130px;
+  flex: 0 0 auto;
   min-height: 0;
   border-radius: 28px;
   border: 0;
@@ -2364,14 +2366,11 @@ td small {
   }
 
   .customer-actions {
-    grid-template-columns: repeat(4, minmax(124px, 1fr));
     gap: 10px;
   }
 
-  .action-tile,
-  .action-tile.primary,
-  .action-tile:nth-child(2) {
-    grid-column: auto;
+  .action-tile {
+    width: 124px;
   }
 
   .customer-shell,
