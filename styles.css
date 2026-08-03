@@ -2069,6 +2069,17 @@ td small {
   align-items: center;
 }
 
+.idle-slide:not(:has(img)) {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  text-align: center;
+}
+
+.idle-slide:not(:has(img)) .idle-slide-copy {
+  justify-items: center;
+  max-width: 900px;
+}
+
 .idle-slide-copy {
   display: grid;
   gap: 18px;
