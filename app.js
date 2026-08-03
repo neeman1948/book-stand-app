@@ -3544,6 +3544,14 @@ function bindEvents() {
 
   elements.customerActions.forEach((button) => {
     button.addEventListener("click", () => showCustomerScreen(button.dataset.customerScreen));
+    const press = () => button.classList.add("is-pressed");
+    const release = () => button.classList.remove("is-pressed");
+    button.addEventListener("touchstart", press, { passive: true });
+    button.addEventListener("touchend", release);
+    button.addEventListener("touchcancel", release);
+    button.addEventListener("mousedown", press);
+    button.addEventListener("mouseup", release);
+    button.addEventListener("mouseleave", release);
   });
   elements.customerBackButtons.forEach((button) => button.addEventListener("click", goBackCustomerScreen));
   elements.aboutBackButton.addEventListener("click", () => switchView("kiosk"));
