@@ -1512,7 +1512,7 @@ function renderSlideshowAdmin() {
           <small>${escapeHtml(slide.text)}</small>
         </article>
       `).join("")
-    : `<p class="small-empty">עדיין אין מבצעים או ספרים שסומנו לתצוגה הרצה.</p>`;
+    : `<p class="small-empty">עדיין אין מבצעים או ספרים שסומנו לשומר המסך.</p>`;
 
   elements.adminSlidesList.innerHTML = settings.items.length
     ? [...settings.items]
@@ -1651,14 +1651,21 @@ function cancelHiddenAdminLongPress() {
   state.hiddenAdminLongPressTimer = null;
 }
 
+// "מבצעים" ו-"שומר מסך" אוחדו ללשונית ניהול אחת (2026-08-04) - שתי הסקציות ב-HTML
+// עדיין נפרדות (data-admin-panel="promotions"/"slideshow"), אבל שתיהן מוצגות יחד
+// כשבוחרים "promotions". קל להפריד שוב בעתיד אם ירצו: מספיק להסיר את השורה עם
+// bothPanels למטה ולהחזיר כפתור לשונית נפרד ל-slideshow ב-index.html.
+const MERGED_ADMIN_PANELS = { promotions: ["promotions", "slideshow"] };
+
 function switchAdminPanel(panel, options = {}) {
   const panelExists = [...elements.adminPanels].some((section) => section.dataset.adminPanel === panel);
   const activePanel = panelExists ? panel : "books";
   state.adminPanel = activePanel;
+  const visiblePanels = MERGED_ADMIN_PANELS[activePanel] || [activePanel];
   elements.adminPanelTabs.forEach((button) => button.classList.toggle("active", button.dataset.adminPanelTab === activePanel));
-  elements.adminPanels.forEach((section) => section.classList.toggle("hidden", section.dataset.adminPanel !== activePanel));
+  elements.adminPanels.forEach((section) => section.classList.toggle("hidden", !visiblePanels.includes(section.dataset.adminPanel)));
   if (activePanel === "books" && options.resetBookSearch) clearAdminBookSearch();
-  renderActiveAdminPanel(activePanel);
+  visiblePanels.forEach((panelName) => renderActiveAdminPanel(panelName));
   keepActiveAdminPanelInView(activePanel);
 }
 
@@ -1778,18 +1785,18 @@ async function disableAutoSlideshowItem(kind, sourceId) {
       ? normalizePromotion({ ...item, showInSlideshow: false })
       : item
     );
-    pushUndoSnapshot("הסרת מבצע מהתצוגה הרצה");
+    pushUndoSnapshot("הסרת מבצע משומר המסך");
     await persistSettings({ ...state.settings, promotions });
-    showToast("המבצע הוסר מהתצוגה הרצה");
+    showToast("המבצע הוסר משומר המסך");
     return;
   }
 
   if (kind === "book") {
     const book = state.books.find((item) => item.id === sourceId);
     if (!book) return;
-    pushUndoSnapshot("הסרת ספר מהתצוגה הרצה");
+    pushUndoSnapshot("הסרת ספר משומר המסך");
     await persistBook({ ...book, showInSlideshow: false });
-    showToast("הספר הוסר מהתצוגה הרצה");
+    showToast("הספר הוסר משומר המסך");
   }
 }
 
@@ -1978,12 +1985,13 @@ function renderAdminForms() {
           <span>${escapeHtml(promo.details || "ללא תיאור")}</span>
           <div class="promo-admin-badges">
             <span class="status-pill ${promo.isActive ? "active" : ""}">${promo.isActive ? "פעיל" : "לא פעיל"}</span>
-            <span class="status-pill ${promo.showInSlideshow ? "slide" : ""}">${promo.showInSlideshow ? "בתצוגה הרצה" : "לא בתצוגה הרצה"}</span>
+            <span class="status-pill ${promo.showInSlideshow ? "slide" : ""}">${promo.showInSlideshow ? "בשומר המסך" : "לא בשומר המסך"}</span>
             <span class="status-pill ${promo.showInBanner ? "banner" : ""}">${promo.showInBanner ? "בשורת המבצעים" : "לא בשורת המבצעים"}</span>
             <span class="status-pill">סדר ${promo.sortOrder}</span>
           </div>
         </div>
         <div class="row-actions">
+          <button class="secondary-button" type="button" data-toggle-promo-active="${promo.id}">${promo.isActive ? "השבתה" : "הפעלה"}</button>
           <button class="secondary-button" type="button" data-edit-promo="${promo.id}">עריכה</button>
           <button class="danger-button" type="button" data-remove-promo="${promo.id}">מחיקה</button>
         </div>
@@ -4050,6 +4058,19 @@ function bindEvents() {
   });
 
   elements.adminPromotionsList.addEventListener("click", async (event) => {
+    const toggleButton = event.target.closest("[data-toggle-promo-active]");
+    if (toggleButton) {
+      const promoId = toggleButton.dataset.togglePromoActive;
+      const promo = state.settings.promotions.find((item) => item.id === promoId);
+      if (!promo) return;
+      const promotions = state.settings.promotions.map((item) => item.id === promoId
+        ? normalizePromotion({ ...item, isActive: !item.isActive })
+        : item
+      );
+      await persistSettings({ ...state.settings, promotions });
+      showToast(promo.isActive ? "המבצע הושבת" : "המבצע הופעל");
+      return;
+    }
     const editButton = event.target.closest("[data-edit-promo]");
     if (editButton) {
       const promo = state.settings.promotions.find((item) => item.id === editButton.dataset.editPromo);
@@ -4068,7 +4089,7 @@ function bindEvents() {
 
   elements.slideshowSettingsForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    pushUndoSnapshot("עדכון תצוגה רצה");
+    pushUndoSnapshot("עדכון שומר מסך");
     await persistSettings({
       ...state.settings,
       slideshow: {
@@ -4190,7 +4211,7 @@ function bindEvents() {
     const disableButton = event.target.closest("[data-disable-slideshow-kind]");
     if (!disableButton) return;
     await disableAutoSlideshowItem(disableButton.dataset.disableSlideshowKind, disableButton.dataset.disableSlideshowId);
-  }, "לא הצלחתי להסיר את הפריט מהתצוגה הרצה."));
+  }, "לא הצלחתי להסיר את הפריט משומר המסך."));
 
   elements.adminSlidesList.addEventListener("click", async (event) => {
     const editButton = event.target.closest("[data-edit-slide]");

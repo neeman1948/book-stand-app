@@ -227,10 +227,9 @@
         <nav class="admin-tabs" aria-label="לשוניות ניהול">
           <button class="admin-tab-button active" data-admin-panel-tab="books" type="button">ניהול ספרים</button>
           <button class="admin-tab-button" data-admin-panel-tab="orders" type="button">הזמנות ספרים</button>
-          <button class="admin-tab-button" data-admin-panel-tab="promotions" type="button">מבצעים</button>
+          <button class="admin-tab-button" data-admin-panel-tab="promotions" type="button">מבצעים ושומר מסך</button>
           <button class="admin-tab-button" data-admin-panel-tab="sales" type="button">מה נקנה</button>
           <button class="admin-tab-button" data-admin-panel-tab="invoices" type="button">חשבוניות</button>
-          <button class="admin-tab-button" data-admin-panel-tab="slideshow" type="button">תצוגה רצה</button>
           <button class="admin-tab-button" data-admin-panel-tab="traders" type="button">סוחרים</button>
           <button class="admin-tab-button" data-admin-panel-tab="settings" type="button">תשלום ואודות</button>
         </nav>
@@ -551,15 +550,15 @@
         <section class="table-section admin-panel hidden" data-admin-panel="slideshow">
           <div class="table-heading">
             <div>
-              <h3>תצוגה רצה בטאבלט</h3>
-              <p class="section-note">כשהטאבלט לא בשימוש, יוצגו שקופיות של מבצעים, ספרים חדשים ושקופיות שתיצור כאן.</p>
+              <h3>שומר מסך בטאבלט</h3>
+              <p class="section-note">כשהטאבלט לא בשימוש, יוצגו שקופיות של מבצעים, ספרים חדשים ושקופיות שתיצור כאן. אם אין שום שקופית פעילה, מסך הלקוח הרגיל פשוט נשאר כמו שהוא.</p>
             </div>
             <button class="table-action" id="add-slide-button" type="button">שקופית חדשה</button>
           </div>
           <form class="slideshow-settings" id="slideshow-settings-form">
             <label class="check-row">
               <input id="slideshow-enabled" type="checkbox" />
-              להפעיל תצוגה רצה אוטומטית
+              להפעיל שומר מסך אוטומטי
             </label>
             <label>
               מעבר לתצוגה אחרי חוסר פעילות
@@ -755,7 +754,7 @@
           </label>
           <label class="check-row">
             <input id="book-show-in-slideshow" type="checkbox" />
-            הצג בתצוגה הרצה
+            הצג בשומר המסך
           </label>
           <label class="wide-field">
             תיאור ללקוח
@@ -834,7 +833,7 @@
           </label>
           <label class="check-row">
             <input id="promo-show-in-slideshow" type="checkbox" checked />
-            הצג בתצוגה הרצה
+            הצג בשומר המסך
           </label>
           <label class="check-row">
             <input id="promo-show-in-banner" type="checkbox" checked />
@@ -1005,6 +1004,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=20260804-hide-customer-stock"></script>
+    <script src="./app.js?v=20260804-promo-slideshow-merge"></script>
   </body>
 </html>
