@@ -1217,7 +1217,7 @@ function renderCart() {
           <div class="cart-item-copy">
             <strong>${escapeHtml(line.book.title)}</strong>
             <span>${escapeHtml(line.book.author || "מחבר לא צוין")}</span>
-            <small>${money(line.book.price)} ליחידה · ${customerStockText(line.book, true)}</small>
+            <small>${money(line.book.price)} ליחידה${customerStockText(line.book, true) ? ` · ${customerStockText(line.book, true)}` : ""}</small>
           </div>
           <div class="cart-qty-controls" aria-label="כמות">
             <button type="button" data-cart-delta="-1" data-cart-book="${line.book.id}">−</button>
@@ -2353,9 +2353,10 @@ function renderOrderSearchResults(results) {
     : `<p class="small-empty">לא מצאנו ספר מתאים. אפשר להשאיר בקשה שנביא אותו לדוכן.</p>`;
 }
 
+// הצגת מלאי ללקוח מוסתרת בכוונה בינתיים (2026-08-04) - עדיין אין מלאי אמיתי מעודכן.
+// כדי להחזיר, מחליפים את השורה למטה בלוגיקה שהייתה כאן קודם (מציגה "נשארו X" / "מלאי רשום: 0").
 function customerStockText(book, withSuffix = false) {
-  if (book.stock > 0) return withSuffix ? `נשארו ${book.stock} במלאי` : `נשארו ${book.stock}`;
-  return "מלאי רשום: 0";
+  return "";
 }
 
 function renderOrderBookCard(book) {
@@ -2371,7 +2372,7 @@ function renderOrderBookCard(book) {
         <div class="price-line compact">
           <span class="price small">${money(book.price)}</span>
           ${originalPrice}
-          <span class="stock-pill">${customerStockText(book)}</span>
+          ${customerStockText(book) ? `<span class="stock-pill">${customerStockText(book)}</span>` : ""}
         </div>
       </div>
       <button class="secondary-button" type="button" data-order-book="${book.id}">בקשו שנביא את הספר</button>
@@ -2394,7 +2395,7 @@ function renderBookCard(book) {
         <div class="price-line compact">
           <span class="price small">${money(book.price)}</span>
           ${originalPrice}
-          <span class="stock-pill">${customerStockText(book)}</span>
+          ${customerStockText(book) ? `<span class="stock-pill">${customerStockText(book)}</span>` : ""}
           ${book.isNew ? `<span class="status-pill new">חדש</span>` : ""}
         </div>
       </div>
@@ -2440,7 +2441,7 @@ function renderResult(book) {
           ${originalPrice ? `<span class="price-label">מחיר קודם</span>${originalPrice}` : ""}
           <span class="price-label">מחיר קניה</span>
           <span class="price">${money(book.price)}</span>
-          <span class="stock-pill">${customerStockText(book, true)}</span>
+          ${customerStockText(book, true) ? `<span class="stock-pill">${customerStockText(book, true)}</span>` : ""}
         </div>
       </div>
       <div class="result-actions">
