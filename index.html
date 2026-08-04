@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=20260804-portrait-fill" />
+    <link rel="stylesheet" href="./styles.css?v=20260804-compact-book-cards" />
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script type="module">
@@ -713,9 +713,9 @@
             <input id="book-author" autocomplete="off" />
           </label>
           <label class="wide-field">
-            ברקוד *
+            ברקוד
             <div class="input-row admin-barcode-row">
-              <input id="book-barcode" required inputmode="numeric" autocomplete="off" />
+              <input id="book-barcode" inputmode="numeric" autocomplete="off" />
               <button class="secondary-button compact-button" id="scan-book-barcode-button" type="button">סריקה במצלמה</button>
             </div>
           </label>
@@ -1005,6 +1005,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=20260804-related-books-categories"></script>
+    <script src="./app.js?v=20260804-thumb-no-text-barcode-optional"></script>
   </body>
 </html>

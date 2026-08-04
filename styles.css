@@ -2469,8 +2469,7 @@ td small {
   .cart-item,
   .cart-actions,
   .checkout-summary-title,
-  .checkout-line,
-  .book-card {
+  .checkout-line {
     grid-template-columns: 1fr;
   }
 
@@ -2480,11 +2479,6 @@ td small {
 
   .cart-qty-controls {
     width: fit-content;
-  }
-
-  .book-card-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    min-width: 0;
   }
 
   .order-result-button {

@@ -2494,7 +2494,7 @@ function renderBookCard(book) {
 function renderThumb(imageUrl) {
   return imageUrl
     ? `<img class="book-thumb" src="${escapeAttr(imageUrl)}" alt="" />`
-    : `<div class="book-thumb placeholder">אין</div>`;
+    : `<div class="book-thumb placeholder"></div>`;
 }
 
 function renderResultImage(imageUrl) {
