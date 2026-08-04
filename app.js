@@ -187,6 +187,7 @@ const elements = {
   bookSearchForm: $("#book-search-form"),
   bookSearch: $("#book-search"),
   customerSuggestions: $("#customer-suggestions"),
+  searchCategoryChips: $("#search-category-chips"),
   searchResults: $("#search-results"),
   resultPanel: $("#result-panel"),
   cartPanel: $("#cart-panel"),
@@ -1062,6 +1063,51 @@ function getCustomerBrowseBooks(limit = 80) {
     .slice(0, limit);
 }
 
+// המלצות "אולי יעניין אותך גם" - קודם לפי מה שבאמת נקנה יחד (אותו purchaseGroupId
+// בטבלת המכירות), ואם אין עדיין מספיק מכירות אמיתיות לספר הזה, משלימים לפי קטגוריה.
+function getRelatedBooks(book, limit = 2) {
+  if (!book) return [];
+  const groupIds = new Set(
+    state.sales
+      .filter((sale) => sale.bookId === book.id && sale.purchaseGroupId)
+      .map((sale) => sale.purchaseGroupId)
+  );
+  const coCounts = new Map();
+  state.sales.forEach((sale) => {
+    if (sale.bookId === book.id || !sale.purchaseGroupId || !groupIds.has(sale.purchaseGroupId)) return;
+    coCounts.set(sale.bookId, (coCounts.get(sale.bookId) || 0) + 1);
+  });
+  const picks = [...coCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([bookId]) => state.books.find((item) => item.id === bookId))
+    .filter(Boolean);
+
+  if (picks.length < limit) {
+    const usedIds = new Set([book.id, ...picks.map((item) => item.id)]);
+    const categoryPicks = state.books.filter((item) => item.category === book.category && !usedIds.has(item.id));
+    picks.push(...categoryPicks.slice(0, limit - picks.length));
+  }
+  return picks.slice(0, limit);
+}
+
+function renderRelatedBooks(book) {
+  const related = getRelatedBooks(book, 2);
+  if (!related.length) return "";
+  return `
+    <div class="related-books">
+      <p class="related-books-title">אולי יעניין אותך גם</p>
+      <div class="related-books-list">
+        ${related.map((item) => `
+          <button class="related-book-card" type="button" data-related-book="${item.id}">
+            ${renderThumb(item.imageUrl)}
+            <span>${escapeHtml(item.title)}</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
 function getCartLines() {
   return state.cart
     .map((item) => {
@@ -1229,10 +1275,31 @@ function renderCart() {
         </article>
       `).join("")}
     </div>
+    ${renderCartRelatedBooks(lines)}
     <div class="cart-actions">
       <button class="secondary-button" type="button" data-cart-continue>להמשיך לבחור</button>
       <button class="secondary-button cart-clear-action" type="button" data-cart-clear>ניקוי סל</button>
       <button class="purchase-button" type="button" data-cart-checkout>${withCartIcon("לתשלום וסימון רכישה")}</button>
+    </div>
+  `;
+}
+
+function renderCartRelatedBooks(lines) {
+  if (!lines.length) return "";
+  const cartBookIds = new Set(lines.map((line) => line.book.id));
+  const related = getRelatedBooks(lines[0].book, 3).filter((item) => !cartBookIds.has(item.id));
+  if (!related.length) return "";
+  return `
+    <div class="related-books">
+      <p class="related-books-title">אולי יעניין אותך גם</p>
+      <div class="related-books-list">
+        ${related.slice(0, 2).map((item) => `
+          <button class="related-book-card" type="button" data-related-book="${item.id}">
+            ${renderThumb(item.imageUrl)}
+            <span>${escapeHtml(item.title)}</span>
+          </button>
+        `).join("")}
+      </div>
     </div>
   `;
 }
@@ -1704,6 +1771,7 @@ function showCustomerScreen(screen) {
       ? searchBooks(elements.bookSearch.value)
       : getCustomerBrowseBooks();
     renderSearchResults(results);
+    renderCategoryChips();
   }
   if (screen === "cart") renderCart();
   if (screen === "promotions") renderPromos();
@@ -2355,6 +2423,14 @@ function renderSearchResults(results) {
     : `<p class="small-empty">לא נמצאו ספרים מתאימים.</p>`;
 }
 
+function renderCategoryChips() {
+  if (!elements.searchCategoryChips) return;
+  const categories = state.settings.categories || [];
+  elements.searchCategoryChips.innerHTML = categories
+    .map((category) => `<button class="browse-category-chip" type="button" data-browse-category="${escapeAttr(category)}">${escapeHtml(category)}</button>`)
+    .join("");
+}
+
 function renderOrderSearchResults(results) {
   elements.orderSearchResults.innerHTML = results.length
     ? results.map(renderOrderBookCard).join("")
@@ -2457,6 +2533,7 @@ function renderResult(book) {
         <button class="secondary-button order-result-button" type="button" data-add-cart-and-open="${book.id}">${withCartIcon("לסל ותשלום")}</button>
         <button class="secondary-button order-result-button" type="button" data-order-from-result="${book.id}">בקשו שנביא</button>
       </div>
+      ${renderRelatedBooks(book)}
     </article>
   `;
 }
@@ -3674,6 +3751,15 @@ function bindEvents() {
     renderSearchResults(value.trim() ? searchBooks(value) : getCustomerBrowseBooks());
   });
 
+  elements.searchCategoryChips?.addEventListener("click", (event) => {
+    const chip = event.target.closest("[data-browse-category]");
+    if (!chip) return;
+    const category = chip.dataset.browseCategory;
+    elements.bookSearch.value = category;
+    hideSuggestions();
+    renderSearchResults(searchBooks(category));
+  });
+
   elements.bookSearchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const results = elements.bookSearch.value.trim()
@@ -3789,6 +3875,12 @@ function bindEvents() {
   });
 
   elements.resultPanel.addEventListener("click", async (event) => {
+    const relatedButton = event.target.closest("[data-related-book]");
+    if (relatedButton) {
+      const book = state.books.find((item) => item.id === relatedButton.dataset.relatedBook);
+      if (book) renderResult(book);
+      return;
+    }
     const orderButton = event.target.closest("[data-order-from-result]");
     if (orderButton) {
       const book = state.books.find((item) => item.id === orderButton.dataset.orderFromResult);
@@ -3814,6 +3906,15 @@ function bindEvents() {
   });
 
   elements.cartPanel?.addEventListener("click", (event) => {
+    const relatedButton = event.target.closest("[data-related-book]");
+    if (relatedButton) {
+      const book = state.books.find((item) => item.id === relatedButton.dataset.relatedBook);
+      if (book) {
+        renderResult(book);
+        showCustomerScreen("price");
+      }
+      return;
+    }
     const deltaButton = event.target.closest("[data-cart-delta]");
     if (deltaButton) {
       const current = state.cart.find((item) => item.bookId === deltaButton.dataset.cartBook);
