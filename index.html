@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=20260804-compact-book-cards" />
+    <link rel="stylesheet" href="./styles.css?v=20260804-clickable-cards-dropzone" />
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script type="module">
@@ -822,7 +822,11 @@
           </label>
           <label>
             תמונה
-            <input id="promo-image-url" placeholder="https://..." />
+            <input id="promo-image-url" placeholder="https://... או גררו תמונה לכאן" />
+          </label>
+          <label>
+            העלאת תמונה מהמחשב
+            <input id="promo-image-file" type="file" accept="image/*" />
           </label>
           <label>
             סדר תצוגה
@@ -866,7 +870,11 @@
           </label>
           <label>
             תמונה
-            <input id="slide-image-url" placeholder="https://..." />
+            <input id="slide-image-url" placeholder="https://... או גררו תמונה לכאן" />
+          </label>
+          <label>
+            העלאת תמונה מהמחשב
+            <input id="slide-image-file" type="file" accept="image/*" />
           </label>
           <label>
             צבע רקע
@@ -1005,6 +1013,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=20260804-thumb-no-text-barcode-optional"></script>
+    <script src="./app.js?v=20260804-clickable-cards-dropzone"></script>
   </body>
 </html>

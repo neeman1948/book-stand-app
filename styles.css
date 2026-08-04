@@ -1036,6 +1036,16 @@ textarea {
   box-shadow: 0 12px 24px rgba(15, 117, 103, 0.07);
 }
 
+.clickable-card {
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.clickable-card:active {
+  transform: scale(0.985);
+  filter: brightness(0.98);
+}
+
 .book-card-actions {
   display: grid;
   gap: 8px;
@@ -2348,6 +2358,14 @@ td small {
   box-shadow: 0 26px 70px rgba(15, 47, 43, 0.24);
   display: grid;
   gap: 16px;
+  transition: outline-color 0.15s ease;
+  outline: 3px dashed transparent;
+  outline-offset: -3px;
+}
+
+.modal-card.drag-over {
+  outline-color: #0aab9a;
+  background: #f2fbf8;
 }
 
 .modal-card h2,

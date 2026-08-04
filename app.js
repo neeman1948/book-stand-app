@@ -324,6 +324,7 @@ const elements = {
   promoTitle: $("#promo-title"),
   promoDetailsInput: $("#promo-details-input"),
   promoImageUrl: $("#promo-image-url"),
+  promoImageFile: $("#promo-image-file"),
   promoSortOrder: $("#promo-sort-order"),
   promoActive: $("#promo-active"),
   promoShowInSlideshow: $("#promo-show-in-slideshow"),
@@ -359,6 +360,7 @@ const elements = {
   slideTitle: $("#slide-title"),
   slideText: $("#slide-text"),
   slideImageUrl: $("#slide-image-url"),
+  slideImageFile: $("#slide-image-file"),
   slideBgColor: $("#slide-bg-color"),
   slideDuration: $("#slide-duration"),
   slideSortOrder: $("#slide-sort-order"),
@@ -2470,7 +2472,7 @@ function renderBookCard(book) {
     : "";
   const description = book.description || book.notes || "";
   return `
-    <article class="book-card">
+    <article class="book-card clickable-card" role="button" tabindex="0" data-select-book="${book.id}">
       ${renderThumb(book.imageUrl)}
       <div>
         <div class="card-title">${escapeHtml(book.title)}</div>
@@ -2484,7 +2486,6 @@ function renderBookCard(book) {
         </div>
       </div>
       <div class="book-card-actions">
-        <button class="secondary-button" type="button" data-select-book="${book.id}">הצגת הספר</button>
         <button class="secondary-button" type="button" data-order-found-book="${book.id}">בקשו שנביא</button>
       </div>
     </article>
@@ -2877,6 +2878,26 @@ function fileToDataUrl(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+// גרירת תמונה ישירות לתוך חלון עריכה (מבצע/שקופית/ספר) - שקול להעלאה מהמחשב, רק בלי לפתוח את בורר הקבצים.
+function bindImageDropZone(container, onFile) {
+  if (!container) return;
+  container.addEventListener("dragover", (event) => {
+    if (!event.dataTransfer?.types?.includes("Files")) return;
+    event.preventDefault();
+    container.classList.add("drag-over");
+  });
+  container.addEventListener("dragleave", (event) => {
+    if (event.target === container) container.classList.remove("drag-over");
+  });
+  container.addEventListener("drop", (event) => {
+    const file = event.dataTransfer?.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    event.preventDefault();
+    container.classList.remove("drag-over");
+    runSafely(() => onFile(file), "לא הצלחתי לטעון את התמונה שגררת.")();
   });
 }
 
@@ -3798,6 +3819,14 @@ function bindEvents() {
     showCustomerScreen("price");
   });
 
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest(".clickable-card");
+    if (!card) return;
+    event.preventDefault();
+    card.click();
+  });
+
   elements.customerSuggestions.addEventListener("click", (event) => {
     const button = event.target.closest("[data-suggest-book]");
     if (!button) return;
@@ -3986,6 +4015,29 @@ function bindEvents() {
     if (!file) return;
     state.editingBookImageUrl = await fileToDataUrl(file);
     elements.bookImageUrl.value = state.editingBookImageUrl;
+  });
+
+  elements.promoImageFile?.addEventListener("change", async () => {
+    const file = elements.promoImageFile.files?.[0];
+    if (!file) return;
+    elements.promoImageUrl.value = await fileToDataUrl(file);
+  });
+
+  elements.slideImageFile?.addEventListener("change", async () => {
+    const file = elements.slideImageFile.files?.[0];
+    if (!file) return;
+    elements.slideImageUrl.value = await fileToDataUrl(file);
+  });
+
+  bindImageDropZone(elements.bookDialogForm, async (file) => {
+    state.editingBookImageUrl = await fileToDataUrl(file);
+    elements.bookImageUrl.value = state.editingBookImageUrl;
+  });
+  bindImageDropZone(elements.promoDialogForm, async (file) => {
+    elements.promoImageUrl.value = await fileToDataUrl(file);
+  });
+  bindImageDropZone(elements.slideDialogForm, async (file) => {
+    elements.slideImageUrl.value = await fileToDataUrl(file);
   });
 
   elements.bookDialogForm.addEventListener("submit", async (event) => {
