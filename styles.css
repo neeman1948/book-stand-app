@@ -208,7 +208,7 @@ h3 {
   min-height: 42px;
   margin-inline: auto;
   border-radius: 999px;
-  background: #0aab9a;
+  background: #00c2a8;
   color: white;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -217,7 +217,7 @@ h3 {
   padding: 5px 12px;
   overflow: hidden;
   border: 0;
-  box-shadow: 0 10px 22px rgba(10, 171, 154, 0.25);
+  box-shadow: 0 10px 22px rgba(0, 194, 168, 0.25);
   cursor: pointer;
 }
 
@@ -285,7 +285,7 @@ h3 {
   min-height: 0;
   border-radius: 40px;
   border: 0;
-  background: #0f9b8e;
+  background: #00c2a8;
   color: white;
   padding: 24px 18px;
   display: grid;
@@ -294,7 +294,7 @@ h3 {
   text-align: center;
   gap: 14px;
   grid-column: auto;
-  box-shadow: 0 20px 38px -12px rgba(15, 155, 142, 0.55);
+  box-shadow: 0 20px 38px -12px rgba(0, 194, 168, 0.55);
   transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
   overflow-wrap: break-word;
   word-break: break-word;
@@ -303,50 +303,50 @@ h3 {
 .action-tile:active,
 .action-tile.is-pressed {
   transform: translateY(4px) scale(0.94);
-  box-shadow: 0 6px 12px -6px rgba(10, 171, 154, 0.5);
+  box-shadow: 0 6px 12px -6px rgba(0, 194, 168, 0.5);
   filter: brightness(0.92);
 }
 
 .action-tile.primary {
   min-height: 0;
   grid-column: auto;
-  background: #0aab9a;
+  background: #00c2a8;
   color: white;
-  box-shadow: 0 14px 26px -10px rgba(10, 171, 154, 0.6);
+  box-shadow: 0 14px 26px -10px rgba(0, 194, 168, 0.6);
 }
 
 .action-tile:nth-child(2) {
   grid-column: auto;
-  background: #f0a500;
+  background: #ffb300;
   color: white;
-  box-shadow: 0 14px 26px -10px rgba(240, 165, 0, 0.6);
+  box-shadow: 0 14px 26px -10px rgba(255, 179, 0, 0.6);
 }
 
 .action-tile:nth-child(2):active,
 .action-tile:nth-child(2).is-pressed {
-  box-shadow: 0 6px 12px -6px rgba(240, 165, 0, 0.5);
+  box-shadow: 0 6px 12px -6px rgba(255, 179, 0, 0.5);
 }
 
 .action-tile:nth-child(3) {
-  background: #e0552e;
+  background: #ff4d1f;
   color: white;
-  box-shadow: 0 14px 26px -10px rgba(224, 85, 46, 0.6);
+  box-shadow: 0 14px 26px -10px rgba(255, 77, 31, 0.6);
 }
 
 .action-tile:nth-child(3):active,
 .action-tile:nth-child(3).is-pressed {
-  box-shadow: 0 6px 12px -6px rgba(224, 85, 46, 0.5);
+  box-shadow: 0 6px 12px -6px rgba(255, 77, 31, 0.5);
 }
 
 .action-tile:nth-child(4) {
-  background: #8347c2;
+  background: #9d3fe0;
   color: white;
-  box-shadow: 0 14px 26px -10px rgba(131, 71, 194, 0.6);
+  box-shadow: 0 14px 26px -10px rgba(157, 63, 224, 0.6);
 }
 
 .action-tile:nth-child(4):active,
 .action-tile:nth-child(4).is-pressed {
-  box-shadow: 0 6px 12px -6px rgba(131, 71, 194, 0.5);
+  box-shadow: 0 6px 12px -6px rgba(157, 63, 224, 0.5);
 }
 
 .action-tile span {
@@ -468,7 +468,7 @@ h3 {
   width: 100%;
   min-height: 190px;
   border-radius: 28px;
-  background: #0aab9a;
+  background: #00c2a8;
   color: white;
   font-size: clamp(1.6rem, 4vw, 2.4rem);
   font-weight: 900;
@@ -573,9 +573,9 @@ textarea {
 #kiosk-view .order-form button:not(.secondary-button),
 #kiosk-view .search-panel button {
   border-radius: 18px;
-  background: #0aab9a;
+  background: #00c2a8;
   font-size: 1.04rem;
-  box-shadow: 0 12px 22px -10px rgba(10, 171, 154, 0.55);
+  box-shadow: 0 12px 22px -10px rgba(0, 194, 168, 0.55);
   transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
 }
 
@@ -583,7 +583,7 @@ textarea {
 #kiosk-view .order-form button:not(.secondary-button):active,
 #kiosk-view .search-panel button:active {
   transform: translateY(2px) scale(0.98);
-  box-shadow: 0 6px 12px -8px rgba(10, 171, 154, 0.45);
+  box-shadow: 0 6px 12px -8px rgba(0, 194, 168, 0.45);
   filter: brightness(0.94);
 }
 
@@ -763,17 +763,17 @@ textarea {
 .purchase-button {
   min-height: 76px;
   border-radius: 22px;
-  background: #0aab9a;
+  background: #00c2a8;
   color: white;
   font-size: 1.35rem;
   font-weight: 900;
-  box-shadow: 0 14px 26px -10px rgba(10, 171, 154, 0.5);
+  box-shadow: 0 14px 26px -10px rgba(0, 194, 168, 0.5);
   transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
 }
 
 .purchase-button:active {
   transform: translateY(3px) scale(0.97);
-  box-shadow: 0 8px 14px -8px rgba(10, 171, 154, 0.4);
+  box-shadow: 0 8px 14px -8px rgba(0, 194, 168, 0.4);
   filter: brightness(0.94);
 }
 
@@ -919,7 +919,7 @@ textarea {
 }
 
 .cart-qty-controls button:active {
-  background: rgba(10, 171, 154, 0.18);
+  background: rgba(0, 194, 168, 0.18);
 }
 
 .cart-qty-controls span {
@@ -1191,7 +1191,7 @@ textarea {
   text-align: center;
   font-weight: 800;
   color: #a85f00;
-  box-shadow: 0 16px 32px rgba(240, 165, 0, 0.14);
+  box-shadow: 0 16px 32px rgba(255, 179, 0, 0.14);
 }
 
 .promo-chip img {
@@ -2364,7 +2364,7 @@ td small {
 }
 
 .modal-card.drag-over {
-  outline-color: #0aab9a;
+  outline-color: #00c2a8;
   background: #f2fbf8;
 }
 
