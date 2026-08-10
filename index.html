@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=20260805-more-vivid-colors" />
+    <link rel="stylesheet" href="./styles.css?v=20260810-quick-purchase-copy-fixes" />
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script type="module">
@@ -59,11 +59,10 @@
               <button class="action-tile" data-customer-screen="order" type="button">
                 <span>+</span>
                 <strong>בקשה לספר</strong>
-                <small>לא מצאתם? נשמור בקשה</small>
+                <small>לא מצאתם? נזמין לכם</small>
               </button>
             </div>
             <button class="promo-ticker hidden" id="promo-ticker" data-customer-screen="promotions" type="button" aria-label="מבצעים פעילים">
-              <span class="ticker-label">מבצעים</span>
               <span class="ticker-window">
                 <span class="ticker-track" id="promo-ticker-track"></span>
               </span>
@@ -116,7 +115,6 @@
             <div class="screen-header">
               <button class="secondary-button" data-customer-back type="button">חזרה</button>
               <div>
-                <p class="eyebrow">רכישה מרוכזת</p>
                 <h2>סל קנייה</h2>
               </div>
             </div>
@@ -641,7 +639,11 @@
             <h3>אפשרויות תשלום</h3>
             <label>
               קישור לתמונת QR של Bit
-              <input id="admin-bit-qr-url" placeholder="https://..." />
+              <input id="admin-bit-qr-url" placeholder="https://... או גררו תמונה לכאן" />
+            </label>
+            <label>
+              העלאת תמונת QR מהמחשב
+              <input id="admin-bit-qr-file" type="file" accept="image/*" />
             </label>
             <label>
               פרטי Bit
@@ -1013,6 +1015,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=20260804-clickable-cards-dropzone"></script>
+    <script src="./app.js?v=20260810-quick-purchase-copy-fixes"></script>
   </body>
 </html>

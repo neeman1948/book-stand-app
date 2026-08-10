@@ -224,6 +224,7 @@ const elements = {
   topSalesList: $("#top-sales-list"),
   paymentForm: $("#payment-form"),
   adminBitQrUrl: $("#admin-bit-qr-url"),
+  adminBitQrFile: $("#admin-bit-qr-file"),
   adminBitDetails: $("#admin-bit-details"),
   adminBankDetails: $("#admin-bank-details"),
   adminPaymentNotes: $("#admin-payment-notes"),
@@ -2486,7 +2487,7 @@ function renderBookCard(book) {
         </div>
       </div>
       <div class="book-card-actions">
-        <button class="secondary-button" type="button" data-order-found-book="${book.id}">בקשו שנביא</button>
+        <button class="secondary-button" type="button" data-quick-purchase="${book.id}">רכישה מהירה</button>
       </div>
     </article>
   `;
@@ -3792,10 +3793,10 @@ function bindEvents() {
   });
 
   elements.searchResults.addEventListener("click", (event) => {
-    const orderButton = event.target.closest("[data-order-found-book]");
-    if (orderButton) {
-      const book = state.books.find((item) => item.id === orderButton.dataset.orderFoundBook);
-      if (book) openOrderForBook(book);
+    const quickPurchaseButton = event.target.closest("[data-quick-purchase]");
+    if (quickPurchaseButton) {
+      const book = state.books.find((item) => item.id === quickPurchaseButton.dataset.quickPurchase);
+      if (book) openPurchaseConfirm(book);
       return;
     }
     const button = event.target.closest("[data-select-book]");
@@ -3806,10 +3807,10 @@ function bindEvents() {
   });
 
   elements.newBooksList.addEventListener("click", (event) => {
-    const orderButton = event.target.closest("[data-order-found-book]");
-    if (orderButton) {
-      const book = state.books.find((item) => item.id === orderButton.dataset.orderFoundBook);
-      if (book) openOrderForBook(book);
+    const quickPurchaseButton = event.target.closest("[data-quick-purchase]");
+    if (quickPurchaseButton) {
+      const book = state.books.find((item) => item.id === quickPurchaseButton.dataset.quickPurchase);
+      if (book) openPurchaseConfirm(book);
       return;
     }
     const button = event.target.closest("[data-select-book]");
@@ -4038,6 +4039,16 @@ function bindEvents() {
   });
   bindImageDropZone(elements.slideDialogForm, async (file) => {
     elements.slideImageUrl.value = await fileToDataUrl(file);
+  });
+
+  elements.adminBitQrFile?.addEventListener("change", async () => {
+    const file = elements.adminBitQrFile.files?.[0];
+    if (!file) return;
+    elements.adminBitQrUrl.value = await fileToDataUrl(file);
+  });
+
+  bindImageDropZone(elements.paymentForm, async (file) => {
+    elements.adminBitQrUrl.value = await fileToDataUrl(file);
   });
 
   elements.bookDialogForm.addEventListener("submit", async (event) => {
