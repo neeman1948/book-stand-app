@@ -170,3 +170,112 @@ drop policy if exists "anon can add sales" on public.sales;
 create policy "anon can add sales" on public.sales for insert with check (true);
 drop policy if exists "anon can update sales" on public.sales;
 create policy "anon can update sales" on public.sales for update using (true) with check (true);
+
+-- אינדקס על תאריך המכירה - נוסף ב-2026-08-18.
+-- דוח "מה נקנה" מושך את המכירות ממוינות לפי created_at. עד היום לא היה אינדקס והמסד
+-- סרק את כל הטבלה בכל טעינה. בכמות הנוכחית זה לא מורגש, אבל התקרה בקוד עלתה מ-200
+-- ל-5000 שורות, ולכן שווה שהמיון יהיה מהיר.
+create index if not exists sales_created_at_idx on public.sales (created_at desc);
+
+-- חשבוניות בענן (טבלה + אחסון קבצים) - נוסף ב-2026-08-18
+--
+-- עד היום החשבוניות נשמרו רק ב-localStorage של דפדפן אחד: הקובץ עצמו נשמר כטקסט base64
+-- בתוך הדפדפן. התוצאה הייתה שחשבונית שהועלתה בטאבלט לא נראתה מהטלפון, ושאם הדפדפן
+-- ינוקה - הכל אבוד. בנוסף הקבצים תפסו את מכסת ה-5MB של הדפדפן. כאן מפרידים לשניים:
+--   1. הקובץ עצמו (PDF/תמונה) נשמר ב-Supabase Storage, בדלי בשם invoices.
+--   2. פרטי החשבונית (ספק, מספר, תאריך, סכום, סטטוס) נשמרים בטבלה public.invoices,
+--      עם עמודה storage_path שמצביעה על הקובץ.
+--
+-- הדלי מוגדר בכוונה כ**פרטי** (public = false): אלה חשבוניות ספקים אמיתיות של העסק, ואסור
+-- שכתובת מנוחשת תיתן לכל אחד באינטרנט לפתוח אותן. האפליקציה מייצרת לכל פתיחה קישור חתום
+-- וזמני (signed URL) שתקף 10 דקות בלבד.
+--
+-- מחיקה: בהמשך ישיר להחלטה מ-2026-08-03, גם כאן אין מדיניות delete לתפקיד anon - לא לטבלה
+-- ולא לקבצים. במקום זה יש עמודה is_deleted: כפתור "מחיקה" בניהול מסמן את השורה כמחוקה
+-- (update, שכן מותר) והיא נעלמת מהרשימה, אבל השורה והקובץ נשמרים וניתן לשחזר אותם דרך
+-- סינון הסטטוס "בארכיון". זה גם נכון חשבונאית - חשבוניות ספק צריך לשמור שנים, לא למחוק.
+-- כשיתווסף Supabase Auth למנהל אפשר יהיה להוסיף מדיניות delete אמיתית שדורשת
+-- auth.role() = 'authenticated' ולנקות ארכיון ישן - לא להרשות delete ל-anon.
+
+create table if not exists public.invoices (
+  id uuid primary key default gen_random_uuid(),
+  supplier text not null default '',
+  number text not null default '',
+  date date,
+  month text not null default '',
+  type text not null default 'invoice',
+  amount numeric not null default 0,
+  status text not null default 'review',
+  notes text not null default '',
+  file_name text not null default '',
+  file_type text not null default '',
+  file_size bigint not null default 0,
+  storage_path text not null default '',
+  is_deleted boolean not null default false,
+  deleted_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.invoices add column if not exists supplier text not null default '';
+alter table public.invoices add column if not exists number text not null default '';
+alter table public.invoices add column if not exists date date;
+alter table public.invoices add column if not exists month text not null default '';
+alter table public.invoices add column if not exists type text not null default 'invoice';
+alter table public.invoices add column if not exists amount numeric not null default 0;
+alter table public.invoices add column if not exists status text not null default 'review';
+alter table public.invoices add column if not exists notes text not null default '';
+alter table public.invoices add column if not exists file_name text not null default '';
+alter table public.invoices add column if not exists file_type text not null default '';
+alter table public.invoices add column if not exists file_size bigint not null default 0;
+alter table public.invoices add column if not exists storage_path text not null default '';
+alter table public.invoices add column if not exists is_deleted boolean not null default false;
+alter table public.invoices add column if not exists deleted_at timestamptz;
+alter table public.invoices add column if not exists created_at timestamptz not null default now();
+
+create index if not exists invoices_month_idx on public.invoices (month);
+create index if not exists invoices_created_at_idx on public.invoices (created_at desc);
+
+do $$
+begin
+  alter publication supabase_realtime add table public.invoices;
+exception when duplicate_object then null;
+end $$;
+
+alter table public.invoices enable row level security;
+
+drop policy if exists "anon can read invoices" on public.invoices;
+create policy "anon can read invoices" on public.invoices for select using (true);
+drop policy if exists "anon can add invoices" on public.invoices;
+create policy "anon can add invoices" on public.invoices for insert with check (true);
+drop policy if exists "anon can update invoices" on public.invoices;
+create policy "anon can update invoices" on public.invoices for update using (true) with check (true);
+
+-- דלי הקבצים עצמו. public = false, ולכן פתיחה אפשרית רק דרך קישור חתום זמני.
+--
+-- שימו לב: בחלק מפרויקטי Supabase שתי הפקודות הבאות (insert into storage.buckets,
+-- ו-create policy on storage.objects) נכשלות עם השגיאה "42501: must be owner of table".
+-- זה תקין ולא אומר שמשהו שבור. במקרה כזה עושים את אותו הדבר ידנית מהדשבורד:
+--   Storage -> New bucket -> שם: invoices, Public: כבוי, File size limit: 10MB
+--   ואז Policies -> שלוש מדיניות (SELECT / INSERT / UPDATE) עם התנאי bucket_id = 'invoices'.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'invoices',
+  'invoices',
+  false,
+  10485760,
+  array['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
+)
+on conflict (id) do update set
+  public = false,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "anon can read invoice files" on storage.objects;
+create policy "anon can read invoice files" on storage.objects
+  for select using (bucket_id = 'invoices');
+drop policy if exists "anon can add invoice files" on storage.objects;
+create policy "anon can add invoice files" on storage.objects
+  for insert with check (bucket_id = 'invoices');
+drop policy if exists "anon can update invoice files" on storage.objects;
+create policy "anon can update invoice files" on storage.objects
+  for update using (bucket_id = 'invoices') with check (bucket_id = 'invoices');

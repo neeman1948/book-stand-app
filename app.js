@@ -124,12 +124,24 @@ const storageKeys = {
 const CART_IDLE_CLEAR_MS = 5 * 60 * 1000;
 const ADMIN_AUTO_LOCK_MS = 3 * 60 * 1000;
 
+// כמה שורות מכירה נמשכות מהמסד. היה 200, וזה חתך את דוח "מה נקנה" ואת ההמלצות
+// "נקנה יחד" בשקט מוחלט ברגע שעברו 200 רכישות. אם התקרה הזאת בכל זאת תיגמר יום אחד,
+// renderSalesInsights מציג הערה גלויה במקום להראות מספרים חלקיים כאילו הם המלאים.
+const SALES_FETCH_LIMIT = 5000;
+
+// חשבוניות: תקרת גודל קובץ. מקומי נשאר 1.5MB (הקובץ נשמר כ-base64 בתוך localStorage
+// שגבולו ~5MB), בענן 10MB - תואם ל-file_size_limit של הדלי ב-supabase-schema.sql.
+const INVOICE_MAX_SIZE_LOCAL = 1.5 * 1024 * 1024;
+const INVOICE_MAX_SIZE_REMOTE = 10 * 1024 * 1024;
+const INVOICE_SIGNED_URL_SECONDS = 600;
+
 let state = {
   books: [],
   sales: [],
   cart: [],
   orders: [],
   invoices: [],
+  invoicesRemoteError: false,
   settings: cloneDefaultSettings(),
   scanner: null,
   adminBarcodeScanner: null,
@@ -595,12 +607,14 @@ function normalizeCartItem(item = {}) {
 }
 
 function normalizeInvoice(invoice) {
+  // date נשלף למשתנה כדי שיעמוד גם בערך null שמגיע מעמודת date אמיתית ב-Postgres.
+  const date = invoice.date || new Date().toISOString().slice(0, 10);
   return {
     id: invoice.id || newId(),
     supplier: invoice.supplier || "",
     number: invoice.number || invoice.documentNumber || invoice.document_number || "",
-    date: invoice.date || new Date().toISOString().slice(0, 10),
-    month: invoice.month || (invoice.date || new Date().toISOString().slice(0, 10)).slice(0, 7),
+    date,
+    month: invoice.month || date.slice(0, 7),
     type: invoice.type || "invoice",
     amount: Number(invoice.amount || 0),
     status: invoice.status || "review",
@@ -608,7 +622,11 @@ function normalizeInvoice(invoice) {
     fileName: invoice.fileName || invoice.file_name || "",
     fileType: invoice.fileType || invoice.file_type || "",
     fileSize: Number(invoice.fileSize || invoice.file_size || 0),
+    storagePath: invoice.storagePath || invoice.storage_path || "",
+    // dataUrl נשאר בכוונה: חשבוניות ישנות ששמורות מקומית עדיין נפתחות דרכו.
     dataUrl: invoice.dataUrl || invoice.data_url || "",
+    isDeleted: Boolean(invoice.isDeleted ?? invoice.is_deleted ?? false),
+    deletedAt: invoice.deletedAt || invoice.deleted_at || "",
     createdAt: invoice.createdAt || invoice.created_at || new Date().toISOString()
   };
 }
@@ -650,8 +668,12 @@ function normalizeCategories(categories) {
 }
 
 function saveLocal() {
-  localStorage.setItem(storageKeys.invoices, JSON.stringify(state.invoices));
   localStorage.setItem(storageKeys.cart, JSON.stringify(state.cart));
+  // זה היה הבאג המרכזי: החשבוניות נכתבו כאן תמיד, גם כשמחוברים לענן - כלומר הן
+  // מעולם לא הגיעו ל-Supabase. עכשיו, כשחשבוניות בענן, לא נוגעים במפתח המקומי בכלל.
+  if (!invoicesUseRemote()) {
+    localStorage.setItem(storageKeys.invoices, JSON.stringify(state.invoices));
+  }
   if (state.usingRemote) return;
   localStorage.setItem(storageKeys.books, JSON.stringify(state.books));
   localStorage.setItem(storageKeys.sales, JSON.stringify(state.sales));
@@ -771,6 +793,25 @@ function getConfig() {
   return window.BOOK_STAND_CONFIG || {};
 }
 
+function invoiceStorageBucket() {
+  return getConfig().storageBuckets?.invoices || "";
+}
+
+// חשבוניות עוברות לענן רק כששני הערכים קיימים ב-config.js: שם הטבלה ושם דלי האחסון.
+// זה דגל ההפעלה: מחיקת שתי השורות האלה מ-config.js מחזירה את ההתנהגות המקומית שהייתה קודם,
+// בלי לגעת בקוד. כל הקוד של החשבוניות בענן מותנה בפונקציה הזאת.
+function invoicesUseRemote() {
+  return Boolean(state.usingRemote && state.supabase && getConfig().tables?.invoices && invoiceStorageBucket());
+}
+
+function invoiceMaxFileSize() {
+  return invoicesUseRemote() ? INVOICE_MAX_SIZE_REMOTE : INVOICE_MAX_SIZE_LOCAL;
+}
+
+function invoiceMaxFileSizeLabel() {
+  return `${Math.round((invoiceMaxFileSize() / (1024 * 1024)) * 10) / 10}MB`;
+}
+
 async function initSupabaseIfConfigured() {
   const config = getConfig();
   if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) return false;
@@ -783,13 +824,14 @@ async function initSupabaseIfConfigured() {
 }
 
 async function refreshRemoteData() {
-  const { books, orders, requests, settings, sales } = getConfig().tables;
+  const { books, orders, requests, settings, sales, invoices } = getConfig().tables;
   const ordersTable = orders || requests;
-  const [booksResult, ordersResult, settingsResult, salesResult] = await Promise.all([
+  const [booksResult, ordersResult, settingsResult, salesResult, invoicesResult] = await Promise.all([
     state.supabase.from(books).select("*").order("created_at", { ascending: false }),
     state.supabase.from(ordersTable).select("*").order("created_at", { ascending: false }),
     state.supabase.from(settings).select("*"),
-    sales ? state.supabase.from(sales).select("*").order("created_at", { ascending: false }).limit(200) : Promise.resolve({ data: [], error: null })
+    sales ? state.supabase.from(sales).select("*").order("created_at", { ascending: false }).limit(SALES_FETCH_LIMIT) : Promise.resolve({ data: [], error: null }),
+    invoices ? state.supabase.from(invoices).select("*").order("created_at", { ascending: false }).limit(500) : Promise.resolve({ data: [], error: null })
   ]);
 
   if (booksResult.error) throw booksResult.error;
@@ -801,6 +843,17 @@ async function refreshRemoteData() {
   state.sales = (salesResult.data || []).map(normalizeSale);
   state.orders = (ordersResult.data || []).map(normalizeOrder);
   state.settings = remoteSettingsToApp(settingsResult.data);
+
+  // סטייה מכוונת מהתבנית שלמעלה: כאן לא זורקים שגיאה. כל throw מהפונקציה הזאת נתפס
+  // ב-init, שמכבה את מצב הענן ונופל ל-loadLocal - כלומר תקלה בטבלת החשבוניות הייתה
+  // מפילה את מסך הלקוח בדוכן לספרי הדגמה. חשבוניות הן צד-אחורי; הן מתדרדרות לבד.
+  if (invoicesResult.error) {
+    console.error(invoicesResult.error);
+    state.invoicesRemoteError = true;
+  } else if (invoices) {
+    state.invoicesRemoteError = false;
+    state.invoices = (invoicesResult.data || []).map(normalizeInvoice);
+  }
 }
 
 function remoteSettingsToApp(rows) {
@@ -832,6 +885,7 @@ function subscribeToRemoteChanges() {
   const tables = getConfig().tables;
   const keys = ["books", tables.orders ? "orders" : "requests", "settings"];
   if (tables.sales) keys.push("sales");
+  if (tables.invoices) keys.push("invoices");
   keys.forEach((key) => {
     state.supabase
       .channel(`live-${tables[key]}`)
@@ -975,6 +1029,150 @@ async function deleteOrder(orderId) {
   if (error) throw error;
   await refreshRemoteData();
   render();
+}
+
+function invoiceToRemotePayload(invoice) {
+  const normalized = normalizeInvoice(invoice);
+  return {
+    id: normalized.id,
+    supplier: normalized.supplier,
+    number: normalized.number,
+    date: normalized.date || null,
+    month: normalized.month,
+    type: normalized.type,
+    amount: normalized.amount,
+    status: normalized.status,
+    notes: normalized.notes,
+    file_name: normalized.fileName,
+    file_type: normalized.fileType,
+    file_size: normalized.fileSize,
+    storage_path: normalized.storagePath,
+    is_deleted: normalized.isDeleted,
+    deleted_at: normalized.deletedAt || null,
+    created_at: normalized.createdAt
+  };
+}
+
+// אותו חוזה שתי-ענפים כמו persistBook. options.file, כשקיים, מועלה לפני שהשורה נכתבת -
+// כך שורה שמצביעה על קובץ חסר היא בלתי אפשרית. options.refresh=false נועד לייבוא מרובה
+// (שומר הרבה חשבוניות ברצף ומרענן פעם אחת בסוף במקום פעם לכל קובץ).
+async function persistInvoice(invoice, options = {}) {
+  const { file = null, refresh = true } = options;
+  const normalized = normalizeInvoice(invoice);
+
+  if (!invoicesUseRemote()) {
+    const existingIndex = state.invoices.findIndex((item) => item.id === normalized.id);
+    if (existingIndex >= 0) state.invoices[existingIndex] = normalized;
+    else state.invoices.unshift(normalized);
+    if (refresh) {
+      saveLocal();
+      renderInvoices();
+    }
+    return normalized;
+  }
+
+  if (file) {
+    normalized.storagePath = await uploadInvoiceFile(normalized, file);
+    normalized.dataUrl = "";
+  }
+
+  const { invoices } = getConfig().tables;
+  const result = await state.supabase
+    .from(invoices)
+    .upsert(invoiceToRemotePayload(normalized), { onConflict: "id" })
+    .select("id");
+  if (result.error) throw result.error;
+  if (!result.data?.length) throw new Error("invoice row was not written (check RLS policies on public.invoices)");
+  if (refresh) {
+    await refreshRemoteData();
+    render();
+  }
+  return normalized;
+}
+
+// "מחיקה" בענן היא בפועל סימון is_deleted (update, מותר) ולא delete אמיתי - אין מדיניות
+// delete לתפקיד anon (ראו הערה ב-supabase-schema.sql). .select("id") הוא מה שהופך כתיבה
+// שנחסמה ע"י RLS משגיאה שקטה (data ריק, error null) להודעת שגיאה אמיתית למשתמש.
+async function deleteInvoice(invoiceId) {
+  if (!invoicesUseRemote()) {
+    state.invoices = state.invoices.filter((invoice) => invoice.id !== invoiceId);
+    saveLocal();
+    render();
+    return;
+  }
+
+  const { invoices } = getConfig().tables;
+  const { data, error } = await state.supabase
+    .from(invoices)
+    .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+    .eq("id", invoiceId)
+    .select("id");
+  if (error) throw error;
+  if (!data?.length) throw new Error("invoice was not archived (check RLS update policy on public.invoices)");
+  await refreshRemoteData();
+  render();
+}
+
+async function refreshInvoicesView() {
+  if (invoicesUseRemote()) {
+    await refreshRemoteData();
+    render();
+    return;
+  }
+  saveLocal();
+  renderInvoices();
+}
+
+async function restoreInvoice(invoiceId) {
+  if (!invoicesUseRemote()) return;
+  const { invoices } = getConfig().tables;
+  const { data, error } = await state.supabase
+    .from(invoices)
+    .update({ is_deleted: false, deleted_at: null })
+    .eq("id", invoiceId)
+    .select("id");
+  if (error) throw error;
+  if (!data?.length) throw new Error("invoice was not restored (check RLS update policy on public.invoices)");
+  await refreshRemoteData();
+  render();
+}
+
+// פותח את קובץ החשבונית. הדלי פרטי, אז לכל לחיצה נוצר קישור חתום קצר-מועד. window.open
+// חייב להיקרא באופן סינכרוני בתוך מאזין הלחיצה - אחרי await הדפדפן כבר לא מזהה את זה
+// כפעולה של המשתמש וחוסם את החלון הקופץ.
+async function openInvoiceFile(invoiceId) {
+  const invoice = state.invoices.find((item) => item.id === invoiceId);
+  if (!invoice) return;
+
+  if (!invoice.storagePath && invoice.dataUrl) {
+    // חשבונית ישנה שעדיין רק בדפדפן הזה. כרום חוסם ניווט של החלון הראשי ל-data: URL,
+    // אז נותנים לדפדפן blob: URL במקום.
+    const blobUrl = URL.createObjectURL(dataUrlToBlob(invoice.dataUrl));
+    window.open(blobUrl, "_blank", "noopener");
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    return;
+  }
+
+  if (!invoice.storagePath || !invoicesUseRemote()) {
+    showToast("לא נמצא קובץ לחשבונית הזאת");
+    return;
+  }
+
+  const viewer = window.open("", "_blank");
+  const { data, error } = await state.supabase.storage
+    .from(invoiceStorageBucket())
+    .createSignedUrl(invoice.storagePath, INVOICE_SIGNED_URL_SECONDS);
+
+  if (error || !data?.signedUrl) {
+    if (viewer) viewer.close();
+    throw error || new Error("missing signed url");
+  }
+  if (!viewer) {
+    showToast("הדפדפן חסם את פתיחת החלון. אשרו חלונות קופצים לאתר הזה ונסו שוב.");
+    return;
+  }
+  viewer.opener = null;
+  viewer.location.replace(data.signedUrl);
 }
 
 async function persistSettings(settings) {
@@ -2119,8 +2317,11 @@ function renderSalesInsights() {
   const lowStockCount = state.books.filter((book) => book.stock > 0 && book.stock <= 2).length;
   const topBooks = [...state.books].filter((book) => book.sold > 0).sort((a, b) => b.sold - a.sold).slice(0, 5);
   const topTitle = topBooks[0]?.title || "אין עדיין נתונים";
+  // אם התקרה נגמרה - להגיד את זה במפורש, במקום להציג מספרים חלקיים כאילו הם המלאים.
+  const truncated = state.usingRemote && state.sales.length >= SALES_FETCH_LIMIT;
 
   elements.salesSummary.innerHTML = `
+    ${truncated ? `<p class="sales-truncated-note">מוצגות ${SALES_FETCH_LIMIT} הרכישות האחרונות בלבד. ההכנסה המשוערת מתייחסת אליהן.</p>` : ""}
     <article>
       <span>נמכרו</span>
       <strong>${salesCount}</strong>
@@ -2331,12 +2532,14 @@ function getVisibleInvoices() {
   const supplier = elements.invoiceSupplierFilter.value;
   const type = elements.invoiceTypeFilter.value;
   const status = elements.invoiceStatusFilter.value;
+  const archiveView = status === "deleted";
   return [...state.invoices]
     .filter((invoice) => {
+      if (archiveView !== Boolean(invoice.isDeleted)) return false;
       const monthMatch = !month || invoice.month === month;
       const supplierMatch = supplier === "all" || !supplier || invoice.supplier === supplier;
       const typeMatch = type === "all" || !type || invoice.type === type;
-      const statusMatch = status === "all" || !status || invoice.status === status;
+      const statusMatch = archiveView || status === "all" || !status || invoice.status === status;
       return monthMatch && supplierMatch && typeMatch && statusMatch;
     })
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -2364,7 +2567,10 @@ function renderInvoices() {
     .slice(0, 3)
     .map(([supplierName, amount]) => `${supplierName}: ${money(amount)}`)
     .join(" · ");
+  const archiveView = elements.invoiceStatusFilter.value === "deleted";
+
   elements.invoiceSummary.innerHTML = `
+    ${state.invoicesRemoteError ? `<p class="sales-truncated-note">לא הצלחתי לטעון חשבוניות מהמסד. שאר האפליקציה ממשיכה לעבוד כרגיל. בדקו שהרצתם את supabase-schema.sql המעודכן.</p>` : ""}
     <article>
       <span>${invoices.length}</span>
       <strong>מסמכים מוצגים</strong>
@@ -2392,15 +2598,17 @@ function renderInvoices() {
             <small>${invoice.number ? `מס' ${escapeHtml(invoice.number)} · ` : ""}${escapeHtml(invoice.fileName || "קובץ")} ${invoice.notes ? `· ${escapeHtml(invoice.notes)}` : ""}</small>
           </div>
           <div class="row-actions">
-            <select class="invoice-status-select invoice-status-${escapeAttr(invoice.status)}" data-invoice-status="${invoice.id}" aria-label="סטטוס חשבונית">
+            <select class="invoice-status-select invoice-status-${escapeAttr(invoice.status)}" data-invoice-status="${invoice.id}" aria-label="סטטוס חשבונית" ${invoice.isDeleted ? "disabled" : ""}>
               ${invoiceStatusOptions(invoice.status)}
             </select>
-            <a class="secondary-button" href="${escapeAttr(invoice.dataUrl)}" target="_blank" rel="noopener">פתיחה</a>
-            <button class="danger-button" type="button" data-delete-invoice="${invoice.id}">מחיקה</button>
+            <button class="secondary-button" type="button" data-open-invoice="${invoice.id}" ${invoice.storagePath || invoice.dataUrl ? "" : "disabled"}>פתיחה</button>
+            ${invoice.isDeleted
+              ? `<button class="secondary-button" type="button" data-restore-invoice="${invoice.id}">שחזור</button>`
+              : `<button class="danger-button" type="button" data-delete-invoice="${invoice.id}">מחיקה</button>`}
           </div>
         </article>
       `).join("")
-    : `<p class="small-empty">אין עדיין חשבוניות להצגה לפי הסינון הנוכחי.</p>`;
+    : `<p class="small-empty">${archiveView ? "אין חשבוניות בארכיון." : "אין עדיין חשבוניות להצגה לפי הסינון הנוכחי."}</p>`;
 }
 
 function renderSuggestions(container, results, action) {
@@ -2880,6 +3088,62 @@ function fileToDataUrl(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function invoiceFileExtension(fileName, fileType) {
+  const fromName = String(fileName || "").toLowerCase().match(/\.([a-z0-9]{1,5})$/);
+  if (fromName) return fromName[1];
+  const byType = {
+    "application/pdf": "pdf",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/heic": "heic",
+    "image/heif": "heif"
+  };
+  return byType[fileType] || "pdf";
+}
+
+function invoiceContentType(fileName, fileType) {
+  if (fileType) return fileType;
+  const byExtension = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    heic: "image/heic",
+    heif: "image/heif"
+  };
+  return byExtension[invoiceFileExtension(fileName, "")] || "application/pdf";
+}
+
+// מפתח קבוע לפי מזהה החשבונית - "2026-08/<uuid>.pdf". קבוע בכוונה: העלאה חוזרת של אותה
+// חשבונית דורסת את אותו קובץ במקום להשאיר עותק יתום. שם הקובץ העברי נשאר רק ב-fileName -
+// המפתח בענן תמיד אותיות לועזיות.
+function invoiceStoragePath(invoice) {
+  const month = /^\d{4}-\d{2}$/.test(invoice.month || "") ? invoice.month : "unknown";
+  return `${month}/${invoice.id}.${invoiceFileExtension(invoice.fileName, invoice.fileType)}`;
+}
+
+function dataUrlToBlob(dataUrl) {
+  const [meta, base64] = String(dataUrl || "").split(",");
+  const contentType = (String(meta).match(/data:([^;]+)/) || [])[1] || "application/octet-stream";
+  const binary = atob(base64 || "");
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: contentType });
+}
+
+async function uploadInvoiceFile(invoice, fileOrBlob) {
+  const path = invoiceStoragePath(invoice);
+  const { error } = await state.supabase.storage.from(invoiceStorageBucket()).upload(path, fileOrBlob, {
+    upsert: true,
+    cacheControl: "3600",
+    contentType: invoiceContentType(invoice.fileName, invoice.fileType)
+  });
+  if (error) throw error;
+  return path;
 }
 
 // גרירת תמונה ישירות לתוך חלון עריכה (מבצע/שקופית/ספר) - שקול להעלאה מהמחשב, רק בלי לפתוח את בורר הקבצים.
@@ -3528,15 +3792,17 @@ async function saveInvoiceFromForm() {
     return;
   }
 
-  if (file.size > 1.5 * 1024 * 1024) {
-    showToast("הקובץ גדול. בשלב המקומי עדיף להעלות קובץ עד 1.5MB.");
+  const maxSize = invoiceMaxFileSize();
+  if (file.size > maxSize) {
+    showToast(`הקובץ גדול מדי. הגודל המקסימלי הוא ${invoiceMaxFileSizeLabel()}.`);
     return;
   }
 
   const date = elements.invoiceDate.value || todayInputValue();
-  const dataUrl = await fileToDataUrl(file);
-  pushUndoSnapshot("הוספת חשבונית");
-  state.invoices.unshift(normalizeInvoice({
+  const remote = invoicesUseRemote();
+  const dataUrl = remote ? "" : await fileToDataUrl(file);
+  if (!remote) pushUndoSnapshot("הוספת חשבונית");
+  const invoice = normalizeInvoice({
     id: newId(),
     supplier: elements.invoiceSupplier.value.trim(),
     number: elements.invoiceNumber?.value.trim() || "",
@@ -3551,9 +3817,8 @@ async function saveInvoiceFromForm() {
     fileSize: file.size,
     dataUrl,
     createdAt: new Date().toISOString()
-  }));
-  saveLocal();
-  renderInvoices();
+  });
+  await persistInvoice(invoice, { file });
   elements.invoiceUploadForm.reset();
   elements.invoiceDate.value = todayInputValue();
   updateInvoiceAutoDetect("idle");
@@ -3575,8 +3840,9 @@ function invoiceValuesFromDetection(file, detection = {}) {
 }
 
 async function saveInvoiceFileWithDetection(file, detection = {}) {
-  const dataUrl = await fileToDataUrl(file);
-  state.invoices.unshift(normalizeInvoice({
+  const remote = invoicesUseRemote();
+  const dataUrl = remote ? "" : await fileToDataUrl(file);
+  const invoice = normalizeInvoice({
     id: newId(),
     ...invoiceValuesFromDetection(file, detection),
     fileName: file.name,
@@ -3584,7 +3850,8 @@ async function saveInvoiceFileWithDetection(file, detection = {}) {
     fileSize: file.size,
     dataUrl,
     createdAt: new Date().toISOString()
-  }));
+  });
+  await persistInvoice(invoice, { file, refresh: false });
 }
 
 async function importInvoiceFiles(files) {
@@ -3594,29 +3861,37 @@ async function importInvoiceFiles(files) {
     return;
   }
 
-  const validFiles = invoiceFiles.filter((file) => file.size <= 1.5 * 1024 * 1024);
+  const maxSize = invoiceMaxFileSize();
+  const validFiles = invoiceFiles.filter((file) => file.size <= maxSize);
   const skippedCount = invoiceFiles.length - validFiles.length;
   if (!validFiles.length) {
-    showToast("הקבצים גדולים מדי לשמירה מקומית");
+    showToast(`הקבצים גדולים מדי. הגודל המקסימלי הוא ${invoiceMaxFileSizeLabel()}.`);
     return;
   }
 
-  pushUndoSnapshot("העלאת כמה חשבוניות");
+  const remote = invoicesUseRemote();
+  if (!remote) pushUndoSnapshot("העלאת כמה חשבוניות");
   updateInvoiceAutoDetect("loading", [`מעלה ${validFiles.length} קבצים ומנסה לזהות נתונים...`]);
 
   let savedCount = 0;
+  let failedCount = 0;
   for (const file of validFiles) {
-    const detection = await detectInvoiceFromFile(file);
-    await saveInvoiceFileWithDetection(file, detection);
-    savedCount += 1;
+    try {
+      const detection = await detectInvoiceFromFile(file);
+      await saveInvoiceFileWithDetection(file, detection);
+      savedCount += 1;
+    } catch (error) {
+      console.error(error);
+      failedCount += 1;
+    }
   }
 
-  saveLocal();
-  renderInvoices();
+  await refreshInvoicesView();
   elements.invoiceUploadForm.reset();
   elements.invoiceDate.value = todayInputValue();
   const lines = [`נשמרו ${savedCount} חשבוניות בסטטוס לבדיקה.`];
   if (skippedCount) lines.push(`${skippedCount} קבצים לא נשמרו כי הם גדולים מדי.`);
+  if (failedCount) lines.push(`${failedCount} קבצים נכשלו בשמירה.`);
   updateInvoiceAutoDetect("success", lines);
   showToast(`${savedCount} חשבוניות נשמרו`);
 }
@@ -4555,26 +4830,37 @@ function bindEvents() {
   elements.invoiceSupplierFilter.addEventListener("change", renderInvoices);
   elements.invoiceTypeFilter.addEventListener("change", renderInvoices);
   elements.invoiceStatusFilter.addEventListener("change", renderInvoices);
-  elements.invoiceList.addEventListener("change", (event) => {
+  elements.invoiceList.addEventListener("change", runSafely(async (event) => {
     const statusSelect = event.target.closest("[data-invoice-status]");
     if (!statusSelect) return;
     const invoice = state.invoices.find((item) => item.id === statusSelect.dataset.invoiceStatus);
     if (!invoice || invoice.status === statusSelect.value) return;
-    pushUndoSnapshot("שינוי סטטוס חשבונית");
-    invoice.status = statusSelect.value;
-    saveLocal();
-    renderInvoices();
+    const remote = invoicesUseRemote();
+    if (!remote) pushUndoSnapshot("שינוי סטטוס חשבונית");
+    await persistInvoice({ ...invoice, status: statusSelect.value });
     showToast("סטטוס החשבונית עודכן");
-  });
-  elements.invoiceList.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-delete-invoice]");
-    if (!button) return;
-    pushUndoSnapshot("מחיקת חשבונית");
-    state.invoices = state.invoices.filter((invoice) => invoice.id !== button.dataset.deleteInvoice);
-    saveLocal();
-    renderInvoices();
-    showToast("החשבונית נמחקה");
-  });
+  }, "לא הצלחתי לעדכן את הסטטוס. נסו שוב."));
+  elements.invoiceList.addEventListener("click", runSafely(async (event) => {
+    const openButton = event.target.closest("[data-open-invoice]");
+    if (openButton) {
+      await openInvoiceFile(openButton.dataset.openInvoice);
+      return;
+    }
+    const restoreButton = event.target.closest("[data-restore-invoice]");
+    if (restoreButton) {
+      await restoreInvoice(restoreButton.dataset.restoreInvoice);
+      showToast("החשבונית שוחזרה מהארכיון");
+      return;
+    }
+    const deleteButton = event.target.closest("[data-delete-invoice]");
+    if (deleteButton) {
+      const remote = invoicesUseRemote();
+      if (remote && !window.confirm("להעביר את החשבונית לארכיון? אפשר לשחזר אותה משם בכל שלב.")) return;
+      if (!remote) pushUndoSnapshot("מחיקת חשבונית");
+      await deleteInvoice(deleteButton.dataset.deleteInvoice);
+      showToast(remote ? "החשבונית הועברה לארכיון" : "החשבונית נמחקה");
+    }
+  }, "לא הצלחתי לבצע את הפעולה על החשבונית. נסו שוב."));
 
   elements.exportButton.addEventListener("click", () => {
     const payload = JSON.stringify(

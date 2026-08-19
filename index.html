@@ -2,12 +2,19 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>מחירון דוכן ספרים</title>
+    <meta name="theme-color" content="#00c2a8" />
+    <link rel="manifest" href="./manifest.json?v=20260818-pwa" />
+    <link rel="icon" href="./icons/favicon-32.png?v=20260818-pwa" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=20260818-pwa" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="נאמן ספרים" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=20260810-quick-purchase-copy-fixes" />
+    <link rel="stylesheet" href="./styles.css?v=20260819-invoices-cloud" />
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script type="module">
@@ -526,6 +533,7 @@
                 <option value="review">לבדיקה</option>
                 <option value="approved">אושרו</option>
                 <option value="paid">שולמו</option>
+                <option value="deleted">בארכיון</option>
               </select>
             </label>
           </div>
@@ -1015,6 +1023,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=20260810-quick-purchase-copy-fixes"></script>
+    <script src="./app.js?v=20260819-invoices-cloud"></script>
   </body>
 </html>

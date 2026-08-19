@@ -2240,6 +2240,18 @@ td small {
   padding: 10px;
 }
 
+.sales-truncated-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  border-radius: 8px;
+  border: 1px solid #f0d8a8;
+  background: #fff8e8;
+  padding: 8px 12px;
+  color: #8a5a04;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
 .sales-summary span,
 .sales-summary small,
 .sales-row span {
