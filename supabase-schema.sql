@@ -18,6 +18,8 @@ create table if not exists public.books (
   is_new boolean not null default false,
   is_on_sale boolean not null default false,
   show_in_slideshow boolean not null default false,
+  is_deleted boolean not null default false,
+  deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -34,6 +36,8 @@ alter table public.books add column if not exists image_url text not null defaul
 alter table public.books add column if not exists is_new boolean not null default false;
 alter table public.books add column if not exists is_on_sale boolean not null default false;
 alter table public.books add column if not exists show_in_slideshow boolean not null default false;
+alter table public.books add column if not exists is_deleted boolean not null default false;
+alter table public.books add column if not exists deleted_at timestamptz;
 alter table public.books add column if not exists created_at timestamptz not null default now();
 alter table public.books add column if not exists updated_at timestamptz not null default now();
 
@@ -45,6 +49,8 @@ create table if not exists public.book_orders (
   notes text not null default '',
   status text not null default 'new',
   is_paid boolean not null default false,
+  is_deleted boolean not null default false,
+  deleted_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -52,6 +58,8 @@ alter table public.book_orders add column if not exists customer_name text not n
 alter table public.book_orders add column if not exists notes text not null default '';
 alter table public.book_orders add column if not exists status text not null default 'new';
 alter table public.book_orders add column if not exists is_paid boolean not null default false;
+alter table public.book_orders add column if not exists is_deleted boolean not null default false;
+alter table public.book_orders add column if not exists deleted_at timestamptz;
 
 create table if not exists public.settings (
   key text primary key,

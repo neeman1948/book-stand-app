@@ -516,6 +516,7 @@ function normalizeBook(book) {
     isNew: Boolean(book.isNew ?? book.is_new ?? false),
     isOnSale: Boolean(book.isOnSale ?? book.is_on_sale ?? false),
     showInSlideshow: Boolean(book.showInSlideshow ?? book.show_in_slideshow ?? book.isNew ?? book.is_new ?? false),
+    isDeleted: Boolean(book.isDeleted ?? book.is_deleted ?? false),
     createdAt: book.createdAt || book.created_at || new Date().toISOString()
   };
 }
@@ -576,6 +577,7 @@ function normalizeOrder(order) {
     notes: order.notes || "",
     status: order.status || "new",
     isPaid: Boolean(order.isPaid ?? order.is_paid ?? false),
+    isDeleted: Boolean(order.isDeleted ?? order.is_deleted ?? false),
     created_at: order.created_at || order.createdAt || new Date().toISOString(),
     createdAt: order.createdAt || order.created_at || new Date().toISOString()
   };
@@ -827,8 +829,8 @@ async function refreshRemoteData() {
   const { books, orders, requests, settings, sales, invoices } = getConfig().tables;
   const ordersTable = orders || requests;
   const [booksResult, ordersResult, settingsResult, salesResult, invoicesResult] = await Promise.all([
-    state.supabase.from(books).select("*").order("created_at", { ascending: false }),
-    state.supabase.from(ordersTable).select("*").order("created_at", { ascending: false }),
+    state.supabase.from(books).select("*").eq("is_deleted", false).order("created_at", { ascending: false }),
+    state.supabase.from(ordersTable).select("*").eq("is_deleted", false).order("created_at", { ascending: false }),
     state.supabase.from(settings).select("*"),
     sales ? state.supabase.from(sales).select("*").order("created_at", { ascending: false }).limit(SALES_FETCH_LIMIT) : Promise.resolve({ data: [], error: null }),
     invoices ? state.supabase.from(invoices).select("*").order("created_at", { ascending: false }).limit(500) : Promise.resolve({ data: [], error: null })
@@ -982,9 +984,17 @@ async function deleteBook(bookId) {
     return;
   }
 
+  // "מחיקה" בענן היא בפועל סימון is_deleted (update, מותר) ולא delete אמיתי - אין מדיניות
+  // delete לתפקיד anon (ראו הערה ב-supabase-schema.sql). .select("id") הוא מה שהופך כתיבה
+  // שנחסמה ע"י RLS משגיאה שקטה (data ריק, error null) להודעת שגיאה אמיתית למשתמש.
   const { books } = getConfig().tables;
-  const { error } = await state.supabase.from(books).delete().eq("id", bookId);
+  const { data, error } = await state.supabase
+    .from(books)
+    .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+    .eq("id", bookId)
+    .select("id");
   if (error) throw error;
+  if (!data?.length) throw new Error("book was not deleted (check RLS update policy on public.books)");
   await refreshRemoteData();
   render();
 }
@@ -1025,8 +1035,13 @@ async function deleteOrder(orderId) {
   }
 
   const { orders, requests } = getConfig().tables;
-  const { error } = await state.supabase.from(orders || requests).delete().eq("id", orderId);
+  const { data, error } = await state.supabase
+    .from(orders || requests)
+    .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+    .eq("id", orderId)
+    .select("id");
   if (error) throw error;
+  if (!data?.length) throw new Error("order was not deleted (check RLS update policy on public.book_orders)");
   await refreshRemoteData();
   render();
 }

@@ -6,6 +6,10 @@ window.BOOK_STAND_CONFIG = {
     books: "books",
     orders: "book_orders",
     settings: "settings",
-    sales: "sales"
+    sales: "sales",
+    invoices: "invoices"
+  },
+  storageBuckets: {
+    invoices: "invoices"
   }
 };
